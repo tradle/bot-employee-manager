@@ -1,0 +1,24 @@
+{
+  "name": "@tradle/bot-employee-manager",
+  "version": "1.0.0",
+  "description": "tradle bot for managing employees",
+  "main": "index.js",
+  "repository": "https://github.com/tradle/bot-employee-manager",
+  "author": "Mark Vayngrib <mark@tradle.io>",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^3.17.1",
+    "husky": "^0.13.2",
+    "tape": "^4.6.3"
+  },
+  "scripts": {
+    "test": "BLUEBIRD_DEBUG=1 node test",
+    "lint": "eslint --quiet --ignore-path .gitignore .",
+    "precommit": "yarn lint",
+    "prepush": "yarn test"
+  },
+  "dependencies": {
+    "bluebird": "^3.5.0",
+    "debug": "^2.6.1"
+  }
+}
