@@ -5,6 +5,7 @@ const test = require('tape')
 const rawCreateBot = require('@tradle/bots').bot
 const manageMonkeys = require('./')
 const TYPE = '_t'
+const memdb = require('memdb')
 
 function createBot (opts) {
   opts.inMemory = true
@@ -15,22 +16,24 @@ test('basic', co(function* (t) {
   const bot = createBot({
     send: co(function* ({ userId, object, other }) {
       const expected = expectedSends.shift()
-      t.equal(userId, expected.userId)
+      t.equal(userId, expected.to)
       t.equal(object[TYPE], expected.type)
     })
   })
 
-  const manager = bot.use(manageMonkeys)
+  const db = memdb({ valueEncoding: 'json' })
+  const employees = bot.use(manageMonkeys({ db }))
+
   const relationshipManager = 'bill'
   const customer = 'ted'
   const expectedSends = [
     {
       to: relationshipManager,
-      type: 'tradle.Introduction'
+      type: 'tradle.MyEmployeeOnboarding'
     },
     {
       to: relationshipManager,
-      type: 'tradle.SimpleMessage'
+      type: 'tradle.Introduction'
     },
     {
       to: customer,
@@ -46,16 +49,15 @@ test('basic', co(function* (t) {
     }
   })
 
-  const employees = yield manager.employees()
-  t.same(employees, { [relationshipManager]: {} })
+  t.same(yield employees.list(), { [relationshipManager]: {} })
 
   bot.receive({
     author: customer,
     objectinfo: {},
     object: {
       object: {
-        [TYPE]: 'tradle.SimpleMessage',
-        message: 'hey'
+        [TYPE]: 'tradle.SelfIntroduction',
+        identity: {}
       }
     }
   })
@@ -76,7 +78,6 @@ test('basic', co(function* (t) {
   })
 
   yield receive()
-
   t.end()
 
   function receive () {

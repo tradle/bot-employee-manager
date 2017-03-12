@@ -2,6 +2,7 @@
 const Promise = require('bluebird')
 const co = Promise.coroutine
 const debug = require('debug')('tradle:bot:employee-manager')
+const collect = Promise.promisify(require('stream-collector'))
 const TYPE = '_t'
 const STORAGE_KEY = require('./package').name
 
@@ -9,20 +10,24 @@ exports = module.exports = createEmployeeManager
 // allow override
 exports.storageKey = STORAGE_KEY
 
-function createEmployeeManager (bot) {
+function createEmployeeManager ({ db }) {
+  db = Promise.promisifyAll(db)
+  return bot => install(bot, db)
+}
+
+function install (bot, db) {
   // employee onboarding
   // assign relationship manager to customers
   // forward messages between customer and relationship manager
-
   const { storageKey } = exports
   const { users, shared } = bot
-  users.on('create', onNewUser)
+  // users.on('create', onNewUser)
 
   const receive = co(function* (data) {
     const { user, object, message } = data
     const { forward } = message
     if (forward) {
-      const employees = yield getEmployees()
+      const employees = yield listEmployees()
       if (!employees[user.id]) {
         debug(`refusing to forward message as sender "${user.id}" is not an employee`)
         return
@@ -42,17 +47,21 @@ function createEmployeeManager (bot) {
     }
   })
 
+  const getEmployee = co(function* ({ userId }) {
+    const employees = yield listEmployees()
+    return employees[userId]
+  })
+
   const presend = co(function* ({ user, object }) {
     if (object[TYPE] !== 'tradle.MyEmployeeOnboarding') return
 
-    const employees = yield getEmployees()
     if (object.revoked) {
-      delete employees[user.id]
+      debug(`revoking employee pass for: ${user.id}`)
+      yield db.delAsync(user.id)
     } else {
-      employees[user.id] = {}
+      debug(`saving employee: ${user.id}`)
+      yield db.putAsync(user.id, {})
     }
-
-    yield setEmployees(employees)
   })
 
   function forwardTo ({ userId, object, message }) {
@@ -67,12 +76,34 @@ function createEmployeeManager (bot) {
   }
 
   const chooseRelationshipManager = co(function* (user) {
-    const employees = yield getEmployees()
+
+    const employees = yield listEmployees()
     const hat = Object.keys(employees)
     if (!hat.length) return
 
     const relationshipManager = getRabbit(hat)
-    return assignRelationshipManager({ user, relationshipManager })
+    assignRelationshipManager({ user, relationshipManager })
+
+    const identity = getIdentity({ user })
+    if (!identity) {
+      debug(`can't introduce "${user.id}" to relationship manager, don't have their identity`)
+      return
+    }
+
+    // const profile = getProfile({ user })
+    const introduction = {
+      [TYPE]: 'tradle.Introduction',
+      identity
+    }
+
+    // if (profile) {
+    //   introduction.profile = profile
+    // }
+
+    return bot.send({
+      userId: relationshipManager,
+      object: introduction
+    })
   })
 
   function getRelationshipManager (user) {
@@ -88,29 +119,27 @@ function createEmployeeManager (bot) {
     return relationshipManager
   }
 
-  const getEmployees = co(function* () {
-    try {
-      return yield shared.get(storageKey)
-    } catch (err) {
-      return {}
-    }
+  const listEmployees = co(function* () {
+    const employees = yield collect(db.createReadStream())
+    const userIdToProps = {}
+    employees.forEach(({ key, value }) => {
+      userIdToProps[key] = value
+    })
+
+    return userIdToProps
   })
 
-  function setEmployees (employees) {
-    return shared.put(storageKey, employees)
-  }
+  // function onNewUser (user) {
+  //   if (getRelationshipManager(user)) return
 
-  function onNewUser (user) {
-    if (getRelationshipManager(user)) return
-
-    chooseRelationshipManager(user)
-    return users.save(user)
-  }
+  //   chooseRelationshipManager(user)
+  //   return users.save(user)
+  // }
 
   const unsubs = [
     bot.addReceiveHandler(receive),
     bot.addPreSendHandler(presend),
-    () => users.removeListener('create', onNewUser)
+    // () => users.removeListener('create', onNewUser)
   ]
 
   function uninstall () {
@@ -123,7 +152,8 @@ function createEmployeeManager (bot) {
       assignRelationshipManager({ user, relationshipManager })
       return users.save(user)
     },
-    employees: getEmployees
+    list: listEmployees,
+    get: getEmployee
   }
 }
 
@@ -133,4 +163,16 @@ function createEmployeeManager (bot) {
 function getRabbit (hat) {
   const idx = Math.floor(Math.random() * hat.length)
   return hat[idx]
+}
+
+function getIdentity ({ user }) {
+  const msg = user.history.find(wrapper => {
+    if (!wrapper.inbound) return
+    if (wrapper.author !== user.id) return
+
+    const type = wrapper.object.object[TYPE]
+    return type === 'tradle.SelfIntroduction' || type === 'tradle.IdentityPublishRequest'
+  })
+
+  return msg && msg.object.object.identity
 }
