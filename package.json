@@ -1,26 +1,36 @@
 {
   "name": "@tradle/bot-employee-manager",
   "version": "1.0.0",
-  "description": "tradle bot for managing employees",
+  "description": "tradle bot strategy for managing employees",
   "main": "index.js",
   "repository": "https://github.com/tradle/bot-employee-manager",
   "author": "Mark Vayngrib <mark@tradle.io>",
   "license": "MIT",
+  "peerDependencies": {
+    "@tradle/models": "*"
+  },
   "devDependencies": {
+    "@tradle/custom-models": "github:tradle/custom-models",
+    "@tradle/engine": "^4.10.3",
+    "@tradle/merge-models": "^2.0.0",
+    "@tradle/models": "github:tradle/models",
     "eslint": "^3.17.1",
     "husky": "^0.13.2",
-    "memdb": "^1.3.1",
+    "sinon": "^3.2.1",
     "tape": "^4.6.3"
   },
   "scripts": {
     "test": "BLUEBIRD_DEBUG=1 node test",
     "lint": "eslint --quiet --ignore-path .gitignore .",
-    "precommit": "yarn lint",
-    "prepush": "yarn test"
+    "precommit": "yarn lint"
   },
   "dependencies": {
-    "bluebird": "^3.5.0",
+    "@tradle/build-resource": "^2.7.0",
+    "@tradle/constants": "^2.1.0",
+    "@tradle/validate-model": "^2.0.2",
+    "@tradle/validate-resource": "^2.8.0",
+    "co": "^4.6.0",
     "debug": "^2.6.1",
-    "stream-collector": "^1.0.1"
+    "xtend": "^4.0.1"
   }
 }
