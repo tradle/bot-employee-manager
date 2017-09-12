@@ -29,15 +29,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI }) {
   let { bot } = productsAPI
   productsAPI.on('bot', botInstance => bot = botInstance)
   productsAPI.addProducts({
-    products: ['tradle.EmployeeOnboarding'],
-    // models: {
-    //   private: {
-    //     all: {
-    //       [assignRMModel.id]: assignRMModel
-    //     },
-    //     assignRM: assignRMModel
-    //   }
-    // }
+    products: ['tradle.EmployeeOnboarding']
   })
 
   const allModels = productsAPI.models.all
@@ -115,7 +107,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI }) {
     }
 
     // assign relationship manager
-    if (type === assignRMModel.id) {
+    if (type === ASSIGN_RM) {
       yield maybeAssignRM({ user, application, assignment: object })
       return
     }
@@ -328,15 +320,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI }) {
     list: listEmployees,
     // get: getEmployee,
     hasEmployees,
-    isEmployee,
-    // models: {
-    //   private: {
-    //     assignRM: assignRMModel
-    //   },
-    //   all: {
-    //     [assignRMModel.id]: assignRMModel
-    //   }
-    // }
+    isEmployee
   }
 
   // prepend
