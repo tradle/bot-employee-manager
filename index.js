@@ -18,7 +18,7 @@ const INTRODUCTION = 'tradle.Introduction'
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 
-exports = module.exports = function createEmployeeManager ({ productsAPI }) {
+exports = module.exports = function createEmployeeManager ({ productsAPI, approveAll }) {
   // assign relationship manager to customers
   // forward messages between customer and relationship manager
   const { namespace, state } = productsAPI
@@ -194,8 +194,13 @@ exports = module.exports = function createEmployeeManager ({ productsAPI }) {
       return
     }
 
-    const hasAtLeastOneEmployee = yield hasEmployees()
-    if (!hasAtLeastOneEmployee) {
+    let approve = approveAll
+    if (!approve) {
+      const hasAtLeastOneEmployee = yield hasEmployees()
+      approve = !hasAtLeastOneEmployee
+    }
+
+    if (approve) {
       return hire({ user, application })
     }
   })
