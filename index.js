@@ -11,6 +11,7 @@ const PACKAGE_NAME = require('./package').name
 const STORAGE_KEY = PACKAGE_NAME
 const EMPLOYEE_ONBOARDING = 'tradle.EmployeeOnboarding'
 const EMPLOYEE_PASS = 'tradle.MyEmployeeOnboarding'
+const APPLICATION = 'tradle.Application'
 const ASSIGN_RM = 'tradle.AssignRelationshipManager'
 const APPROVED = 'tradle.ApplicationApproval'
 const DENIAL = 'tradle.ApplicationDenial'
@@ -34,16 +35,20 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
   const allModels = productsAPI.models.all
   const privateModels = productsAPI.models.private
-  function maybeForward ({ user, message, to }) {
-    if (!isEmployee(user)) {
-      debug(`refusing to forward message as sender "${user.id}" is not an employee`)
-      return
+  const resignAndForward = co(function* ({ user, message, to }) {
+    const object = yield bot.reSign(message.object)
+    const type = object[TYPE]
+    debug(`forwarding ${type} from relationship manager ${user.id}`)
+    const other = {
+      originalSender: message._author
     }
 
-    const type = message.object[TYPE]
-    debug(`forwarding ${type} from relationship manager ${user.id}`)
-    return forwardMessage({ message, to })
-  }
+    if (message.context) {
+      other.context = message.context
+    }
+
+    return productsAPI.send({ object, to, other })
+  })
 
   const maybeAssignRM = co(function* ({ user, application, assignment }) {
     if (!isEmployee(user)) {
@@ -101,7 +106,18 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     const type = object[TYPE]
     // forward from employee to customer
     if (forward) {
-      yield maybeForward({ user, message, to: forward })
+      if (isEmployee(user)) {
+        const me = yield bot.getMyIdentity()
+        if (me._permalink === forward) {
+          debug(`not forwarding message ${message._link} to self`)
+          return
+        }
+
+        yield resignAndForward({ user, message, to: forward })
+      } else {
+        debug(`refusing to forward message as sender "${user.id}" is not an employee`)
+      }
+
       // prevent default processing
       return false
     }
@@ -124,7 +140,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
     if (!application) return
 
-    // forward from employee to customer
+    // forward from customer to relationship manager
     const { relationshipManager } = application
     if (relationshipManager) {
       const rmPermalink = parseStub(relationshipManager).permalink
@@ -174,7 +190,15 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
         : Promise.resolve(userOrId)
     })
 
-    application.relationshipManager = relationshipManager.identity
+    buildResource.set({
+      models: allModels,
+      model: APPLICATION,
+      resource: application,
+      properties: {
+        relationshipManager: relationshipManager.identity
+      }
+    })
+
     const promiseIntro = mutuallyIntroduce({ a: user, b: relationshipManager })
     const promiseSaveApplication = productsAPI.saveNewVersionOfApplication({
       user,
@@ -212,10 +236,6 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
   // }
 
   // const defaultOnFormsCollected = productsAPI.removeDefaultHandler('onFormsCollected')
-  productsAPI.plugins.use({
-    onFormsCollected,
-    // willSign: setEntityRole
-  })
 
   function hire ({ user, application }) {
     if (isEmployee(user)) {
@@ -318,6 +338,14 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     return user.roles && user.roles.some(role => role.id === id)
   }
 
+  // const didSend = co(function* (input, sentObject) {
+  //   const { user, application } = input
+  //   const relationshipManager = application && application.relationshipManager
+  //   if (!relationshipManager) return
+
+  //   if (sentObject)
+  // })
+
   const manager = {
     assignRelationshipManager,
     hire,
@@ -328,7 +356,16 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     isEmployee
   }
 
+  productsAPI.plugins.use({
+    onFormsCollected,
+    // didSend
+    // willSign: setEntityRole
+  })
+
   // prepend
-  productsAPI.plugins.use({ onmessage }, true)
+  productsAPI.plugins.use({
+    onmessage,
+  }, true)
+
   return manager
 }
