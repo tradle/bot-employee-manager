@@ -338,13 +338,28 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     return user.roles && user.roles.some(role => role.id === id)
   }
 
-  // const didSend = co(function* (input, sentObject) {
-  //   const { user, application } = input
-  //   const relationshipManager = application && application.relationshipManager
-  //   if (!relationshipManager) return
+  // forward any messages sent by the bot
+  // to the relationship manager
+  const didSend = co(function* (input, sentObject) {
+    const { user, other={} } = input
+    const req = productsAPI.getCurrentRequest(user)
+    if (!req) return
 
-  //   if (sentObject)
-  // })
+    const { message, application } = req
+    if (!application) return
+
+    let { relationshipManager } = application
+    if (!relationshipManager) return
+
+    relationshipManager = parseStub(relationshipManager).permalink
+    const { originalSender } = other
+    if (originalSender === relationshipManager) return
+
+    yield forwardMessage({
+      message,
+      to: relationshipManager
+    })
+  })
 
   const manager = {
     assignRelationshipManager,
@@ -358,7 +373,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
   productsAPI.plugins.use({
     onFormsCollected,
-    // didSend
+    didSend
     // willSign: setEntityRole
   })
 
