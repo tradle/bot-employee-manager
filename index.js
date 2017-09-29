@@ -1,4 +1,5 @@
 const co = require('co').wrap
+const shallowClone = require('xtend')
 const { TYPE } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
 const { parseId, parseStub } = require('@tradle/validate-resource').utils
@@ -35,7 +36,8 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
   const allModels = productsAPI.models.all
   const privateModels = productsAPI.models.private
-  const resignAndForward = co(function* ({ user, message, to }) {
+  const resignAndForward = co(function* ({ req, to }) {
+    const { user, message } = req
     const object = yield bot.reSign(message.object)
     const type = object[TYPE]
     debug(`forwarding ${type} from relationship manager ${user.id}`)
@@ -47,10 +49,11 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
       other.context = message.context
     }
 
-    return productsAPI.send({ object, to, other })
+    return productsAPI.send({ req, object, to, other })
   })
 
-  const maybeAssignRM = co(function* ({ user, application, assignment }) {
+  const maybeAssignRM = co(function* ({ req, assignment }) {
+    const { user, application } = req
     if (!isEmployee(user)) {
       debug(`refusing to assign relationship manager as sender "${user.id}" is not an employee`)
       return
@@ -58,15 +61,17 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
     const relationshipManager = parseStub(assignment.employee).permalink
     const applicationResource = yield productsAPI.getApplicationByStub(assignment.application)
-    debug(`assigning relationship manager ${relationshipManager} to user ${user.id}`)
+    const applicant = parseStub(applicationResource.applicant).permalink
+    debug(`assigning relationship manager ${relationshipManager} to user ${applicant}`)
     yield assignRelationshipManager({
-      user: parseStub(applicationResource.applicant).permalink,
+      req,
+      applicant,
       relationshipManager: relationshipManager === user.id ? user : relationshipManager,
       application: applicationResource
     })
   })
 
-  const approveOrDeny = co(function* ({ user, application, judgment }) {
+  const approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) {
     // TODO: maybe only relationship manager or someone with the right role
     // should be able to perform these actions
     const approve = judgment[TYPE] === APPROVED
@@ -78,16 +83,17 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     }
 
     const applicantPermalink = parseStub(application.applicant).permalink
-    if (applicantPermalink === user.id) {
+    if (applicantPermalink === approvedBy.id) {
       debug('applicant cannot approve/deny their own application')
       return
     }
 
     const applicant = yield bot.users.get(applicantPermalink)
+    const opts = { req, user: applicant, application }
     if (approve) {
-      yield productsAPI.approveApplication({ user: applicant, application })
+      yield productsAPI.approveApplication(opts)
     } else {
-      yield productsAPI.denyApplication({ user: applicant, application })
+      yield productsAPI.denyApplication(opts)
     }
 
     const saveApplication = willSave
@@ -101,7 +107,8 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     yield [saveApplication, saveUser]
   })
 
-  const onmessage = co(function* ({ user, application, message }) {
+  const onmessage = co(function* (req) {
+    const { user, application, message } = req
     const { object, forward } = message
     const type = object[TYPE]
     // forward from employee to customer
@@ -113,7 +120,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
           return
         }
 
-        yield resignAndForward({ user, message, to: forward })
+        yield resignAndForward({ req, to: forward })
       } else {
         debug(`refusing to forward message as sender "${user.id}" is not an employee`)
       }
@@ -124,13 +131,14 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
     // assign relationship manager
     if (type === ASSIGN_RM) {
-      yield maybeAssignRM({ user, application, assignment: object })
+      yield maybeAssignRM({ req, assignment: object })
       return
     }
 
     if (type === APPROVED || type === DENIAL) {
       yield approveOrDeny({
-        user,
+        req,
+        approvedBy: user,
         application,
         judgment: object
       })
@@ -146,16 +154,17 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
       const rmPermalink = parseStub(relationshipManager).permalink
       debug(`forwarding ${type} to relationship manager ${rmPermalink}`)
       yield forwardMessage({
-        message,
+        req,
         to: rmPermalink
       })
     }
   })
 
-  function forwardMessage ({ message, to }) {
+  function forwardMessage ({ req, object, to, other }) {
     // const other = getCustomMessageProperties(message)
     // delete other.forward
-    return productsAPI.send({ user: to, object: message })
+    if (!object) object = req.message
+    return productsAPI.send({ req, to, object, other })
   }
 
   function hasEmployees () {
@@ -178,13 +187,21 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     return items || []
   })
 
-  const assignRelationshipManager = co(function* ({ user, relationshipManager, application }) {
+  const assignRelationshipManager = co(function* ({
+    req,
+    applicant,
+    relationshipManager,
+    application
+  }) {
     const rmID = relationshipManager.id || relationshipManager
     if (application.relationshipManager === rmID) {
       return
     }
 
-    [user, relationshipManager] = yield [user, relationshipManager].map(userOrId => {
+    ;[applicant, relationshipManager] = yield [
+      applicant,
+      relationshipManager
+    ].map(userOrId => {
       return typeof userOrId === 'string'
         ? bot.users.get(userOrId)
         : Promise.resolve(userOrId)
@@ -199,9 +216,9 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
       }
     })
 
-    const promiseIntro = mutuallyIntroduce({ a: user, b: relationshipManager })
+    const promiseIntro = mutuallyIntroduce({ req, a: applicant, b: relationshipManager })
     const promiseSaveApplication = productsAPI.saveNewVersionOfApplication({
-      user,
+      user: applicant,
       application
     })
 
@@ -212,8 +229,8 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
   })
 
   // auto-approve first employee
-  const onFormsCollected = co(function* (data) {
-    const { user, application } = data
+  const onFormsCollected = co(function* (req) {
+    const { user, application } = req
     if (isEmployee(user) || application.requestFor !== EMPLOYEE_ONBOARDING) {
       return
     }
@@ -225,7 +242,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     }
 
     if (approve) {
-      return hire({ user, application })
+      return hire(req)
     }
   })
 
@@ -237,7 +254,8 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
   // const defaultOnFormsCollected = productsAPI.removeDefaultHandler('onFormsCollected')
 
-  function hire ({ user, application }) {
+  function hire (req) {
+    let { user, application } = req
     if (isEmployee(user)) {
       debug(`user ${user.id} is already an employee`)
       return
@@ -251,10 +269,11 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     }
 
     addEmployeeRole(user)
-    return productsAPI.approveApplication({ user, application })
+    return productsAPI.approveApplication({ req })
   }
 
-  function fire ({ user, application }) {
+  function fire (req) {
+    let { user, application } = req
     if (!isEmployee(user)) {
       throw new Error(`user ${user.id} is not an employee`)
     }
@@ -292,7 +311,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     .toJSON()
   }
 
-  const mutuallyIntroduce = co(function* ({ a, b }) {
+  const mutuallyIntroduce = co(function* ({ req, a, b }) {
     const aPermalink = a.id || a
     const bPermalink = b.id || b
     const getUserA = typeof a === 'string' ? bot.users.get(a) : a
@@ -306,8 +325,8 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     const introduceA = createIntroductionFor({ user: a, identity: aIdentity })
     const introduceB = createIntroductionFor({ user: b, identity: bIdentity })
     yield [
-      productsAPI.send({ user: userA, object: introduceB }),
-      productsAPI.send({ user: userB, object: introduceA })
+      productsAPI.send({ req, to: userA, object: introduceB }),
+      productsAPI.send({ req, to: userB, object: introduceA })
     ]
   })
 
@@ -341,22 +360,27 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
   // forward any messages sent by the bot
   // to the relationship manager
   const didSend = co(function* (input, sentObject) {
-    const { user, other={} } = input
-    const req = productsAPI.getCurrentRequest(user)
-    if (!req) return
-
-    const { message, application } = req
+    let { req, to, other={} } = input
+    const { user, message, application } = req
     if (!application) return
 
     let { relationshipManager } = application
     if (!relationshipManager) return
 
     relationshipManager = parseStub(relationshipManager).permalink
+    // avoid infinite loop of sending to the same person
+    // and then forwarding, and then forwarding, and then forwarding...
+    if (to === relationshipManager) return
+
     const { originalSender } = other
     if (originalSender === relationshipManager) return
 
+    other = shallowClone(other)
+    other.originalRecipient = to.id || to
     yield forwardMessage({
-      message,
+      req,
+      other,
+      object: sentObject,
       to: relationshipManager
     })
   })
