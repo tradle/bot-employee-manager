@@ -36,13 +36,45 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
   const allModels = productsAPI.models.all
   const privateModels = productsAPI.models.private
-  const resignAndForward = co(function* ({ req, to }) {
+  const maybeForwardToEmployee = co(function* ({ req, forward }) {
+    const { user, message } = req
+    const { object } = message
+    const type = object[TYPE]
+    if (isEmployee(user)) {
+      const me = yield bot.getMyIdentity()
+      if (me._permalink === forward) {
+        debug(`not forwarding ${type} ${object._link} to self`)
+        return
+      }
+
+      debug(`forwarding ${type} from employee ${user.id} to ${forward}`)
+      yield reSignAndForward({ req, to: forward })
+      return
+    }
+
+    let recipient
+    try {
+      recipient = yield bot.users.get(forward)
+    } catch (err) {
+      debug(`final recipient ${forward} specified in "forward" was not found`)
+      return
+    }
+
+    if (!isEmployee(recipient)) {
+      debug(`refusing to forward: neither sender "${user.id}" nor recipient "${forward}" is an employee`)
+      return
+    }
+
+    debug(`forwarding ${type} from ${user.id} to employee ${forward}`)
+    yield reSignAndForward({ req, to: forward })
+  })
+
+  const reSignAndForward = co(function* ({ req, to }) {
     const { user, message } = req
     const object = yield bot.reSign(message.object)
     const type = object[TYPE]
-    debug(`forwarding ${type} from relationship manager ${user.id}`)
     const other = {
-      originalSender: message._author
+      originalSender: user.id
     }
 
     if (message.context) {
@@ -113,18 +145,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     const type = object[TYPE]
     // forward from employee to customer
     if (forward) {
-      if (isEmployee(user)) {
-        const me = yield bot.getMyIdentity()
-        if (me._permalink === forward) {
-          debug(`not forwarding message ${message._link} to self`)
-          return
-        }
-
-        yield resignAndForward({ req, to: forward })
-      } else {
-        debug(`refusing to forward message as sender "${user.id}" is not an employee`)
-      }
-
+      yield maybeForwardToEmployee({ req, forward })
       // prevent default processing
       return false
     }
@@ -357,6 +378,15 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
     return user.roles && user.roles.some(role => role.id === id)
   }
 
+  function willSend ({ req, other={} }) {
+    const { message } = req
+    const originalSender = message && message.originalSender
+    if (originalSender) {
+      debug('setting "forward" based on original sender')
+      other.forward = originalSender
+    }
+  }
+
   // forward any messages sent by the bot
   // to the relationship manager
   const didSend = co(function* (input, sentObject) {
@@ -397,6 +427,7 @@ exports = module.exports = function createEmployeeManager ({ productsAPI, approv
 
   productsAPI.plugins.use({
     onFormsCollected,
+    willSend,
     didSend
     // willSign: setEntityRole
   })
