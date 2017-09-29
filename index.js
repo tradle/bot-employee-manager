@@ -176,6 +176,7 @@ proto._onmessage = co(function* (req) {
   if (forward) {
     yield this._maybeForwardToEmployee({ req, forward })
     // prevent default processing
+    debug('preventing further processing of inbound message')
     return false
   }
 
@@ -370,12 +371,15 @@ proto.mutuallyIntroduce = co(function* ({ req, a, b }) {
   ]
 })
 
-proto._willSend = function _willSend ({ req, other={} }) {
+proto._willSend = function _willSend (opts) {
+  const { req, other={} } = opts
   const { message } = req
   const originalSender = message && message.originalSender
   if (originalSender) {
     debug('setting "forward" based on original sender')
     other.forward = originalSender
+    // in case it was null
+    opts.other = other
   }
 }
 
