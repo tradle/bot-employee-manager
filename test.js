@@ -3,7 +3,7 @@ const co = require('co').wrap
 const test = require('tape')
 const sinon = require('sinon')
 const extend = require('xtend/mutable')
-const { TYPE } = require('@tradle/constants')
+const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
 const baseModels = require('@tradle/merge-models')()
   .add(require('@tradle/models').models)
@@ -18,20 +18,23 @@ const manageMonkeys = require('./')
 // }
 
 test('basic', co(function* (t) {
-  const user = {
+  const relationshipManager = {
     id: 'bill',
-    roles: [{ id: 'RoleModel_employee' }]
+    identity: {
+      id: 'tradle.Identity_bill_123'
+    },
+    roles: [{ id: 'Role_employee' }]
   }
 
-  const relationshipManager = { id: 'ted' }
-  const application = {
-    applicant: {
-      id: buildResource.id({
-        model: baseModels['tradle.Identity'],
-        link: user.id,
-        permalink: user.id
-      })
+  const customer = {
+    id: 'ted',
+    identity: {
+      id: 'tradle.Identity_ted_123'
     }
+  }
+
+  const application = {
+    applicant: customer.identity
   }
 
   const applicationId = buildResource.id({
@@ -44,10 +47,24 @@ test('basic', co(function* (t) {
   const productsAPI = extend(new EventEmitter(), {
     bot: {
       db: {},
+      reSign: sinon.stub().callsFake(object => {
+        object[SIG] += '1'
+        return Promise.resolve(object)
+      }),
+      getMyIdentity: sinon.stub().resolves({ _permalink: 'zzz' }),
+      addressBook: {
+        byPermalink: permalink => {
+          if (permalink !== customer.id && permalink !== relationshipManager.id) {
+            throw new Error('expected customer or relationshipManager')
+          }
+
+          return {}
+        }
+      },
       users: {
         get: co(function* (link) {
-          if (link === user.id) {
-            return user
+          if (link === customer.id) {
+            return customer
           }
 
           if (link === relationshipManager.id) {
@@ -59,7 +76,8 @@ test('basic', co(function* (t) {
         merge: sinon.stub()
       },
     },
-    getApplicationByStub: sinon.stub().returns(Promise.resolve(application)),
+    saveNewVersionOfApplication: sinon.stub().resolves({}),
+    getApplicationByStub: sinon.stub().resolves(application),
     state: {
       getApplicationsByType: sinon.stub().returns(application),
     },
@@ -67,7 +85,7 @@ test('basic', co(function* (t) {
       all: baseModels,
       private: {
         role: {
-          id: 'RoleModel',
+          id: 'Role',
           enum: [
             { id: 'employee' }
           ]
@@ -82,14 +100,14 @@ test('basic', co(function* (t) {
     addProducts: function () {
 
     },
-    send: co(function* ({ userId, object, other }) {
+    send: co(function* ({ req, object, to, other }) {
       // const expected = expectedSends.shift()
       // t.equal(userId, expected.to)
       // t.equal(object[TYPE], expected.type)
     })
   })
 
-  const sendSpy = sinon.spy(productsAPI, 'send')
+  let sendSpy = sinon.spy(productsAPI, 'send')
   const manager = manageMonkeys({ productsAPI })
   productsAPI.emit('bot', productsAPI.bot)
 
@@ -110,26 +128,71 @@ test('basic', co(function* (t) {
 
   productsAPI.bot.db.find = sinon.stub().returns(Promise.resolve({ items: [] }))
   yield onmessage({
-    user,
+    user: relationshipManager,
     application,
     message: {
       object: {
         [TYPE]: 'tradle.AssignRelationshipManager',
-        employee: {
-          id: buildResource.id({
-            model: baseModels['tradle.Identity'],
-            link: relationshipManager.id,
-            permalink: relationshipManager.id
-          })
-        },
+        employee: relationshipManager.identity,
         application: {
           id: applicationId
         }
       }
+    },
+    sendQueue: []
+  })
+
+  t.equal(sendSpy.getCall(0).args[0].object[TYPE], 'tradle.Introduction')
+  t.equal(sendSpy.getCall(1).args[0].object[TYPE], 'tradle.Introduction')
+  t.equal(productsAPI.saveNewVersionOfApplication.callCount, 1)
+
+  sendSpy.restore()
+  sendSpy = sinon.spy(productsAPI, 'send')
+
+  yield onmessage({
+    user: customer,
+    application,
+    message: {
+      object: {
+        [TYPE]: 'tradle.SimpleMessage',
+        message: 'hey'
+      }
     }
   })
 
-  console.log(sendSpy.getCall(0))
+  // forward to relationship manager
+  const fwdHey = sendSpy.getCall(0).args[0]
+  t.equal(fwdHey.object.message, 'hey')
+  t.equal(fwdHey.to, relationshipManager.id)
+  t.equal(fwdHey.other.originalSender, customer.id)
+  t.equal(productsAPI.bot.reSign.callCount, 0)
+
+  sendSpy.restore()
+  sendSpy = sinon.spy(productsAPI, 'send')
+
+  yield onmessage({
+    user: relationshipManager,
+    // no application specified
+    message: {
+      forward: customer.id,
+      object: {
+        [TYPE]: 'tradle.SimpleMessage',
+        message: 'ho'
+      }
+    }
+  })
+
+  // forward from relationship manager
+  const fwdHo = sendSpy.getCall(0).args[0]
+  t.equal(fwdHo.object.message, 'ho')
+  t.equal(fwdHo.to, customer.id)
+  t.equal(fwdHo.other.originalSender, relationshipManager.id)
+  t.equal(productsAPI.bot.reSign.callCount, 1)
+
+  sendSpy.restore()
+  sendSpy = sinon.spy(productsAPI, 'send')
+
+  t.end()
 
   // bot.send({
   //   userId: relationshipManager,

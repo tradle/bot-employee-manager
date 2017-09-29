@@ -1,4 +1,7 @@
+const bindAll = require('bindall')
 const omit = require('object.omit')
+const pick = require('object.pick')
+const shallowClone = require('xtend')
 const shallowExtend = require('xtend/mutable')
 const { omitVirtual } = require('@tradle/build-resource')
 const debug = require('debug')(require('./package').name)
@@ -19,8 +22,11 @@ const BUILT_IN_MESSAGE_PROPS = [
 ].concat(Object.keys(ObjectModel.properties))
 
 module.exports = {
-  shallowExtend,
+  bindAll,
   omit,
+  pick,
+  shallowClone,
+  shallowExtend,
   debug,
   getCustomMessageProperties
 }
