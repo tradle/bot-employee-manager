@@ -96,7 +96,7 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
 
   debug(`forwarding ${type} from ${user.id} to employee ${forward}`)
   // don't unwrap-and-re-sign
-  yield this.forwardMessage({ req, to: forward })
+  yield this.forwardToEmployee({ req, to: forward })
   // yield this.reSignAndForward({ req, to: forward })
 })
 
@@ -211,14 +211,14 @@ proto._onmessage = co(function* (req) {
   if (relationshipManager) {
     const rmPermalink = parseStub(relationshipManager).permalink
     debug(`forwarding ${type} to relationship manager ${rmPermalink}`)
-    yield this.forwardMessage({
+    yield this.forwardToEmployee({
       req,
       to: rmPermalink
     })
   }
 })
 
-proto.forwardMessage = function forwardMessage ({ req, object, to, other={} }) {
+proto.forwardToEmployee = function forwardToEmployee ({ req, object, to, other={} }) {
   // const other = getCustomMessageProperties(message)
   // delete other.forward
   const { user, message } = req
@@ -411,7 +411,7 @@ proto._didSend = co(function* (input, sentObject) {
   other = shallowClone(other)
   other.originalRecipient = to.id || to
   // nothing to unwrap here, this is an original from our bot
-  yield this.forwardMessage({
+  yield this.forwardToEmployee({
     req,
     other,
     object: sentObject,
