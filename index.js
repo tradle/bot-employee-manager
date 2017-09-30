@@ -22,17 +22,22 @@ const INTRODUCTION = 'tradle.Introduction'
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 
-exports = module.exports = function createEmployeeManager ({ productsAPI, approveAll }) {
-  return new EmployeeManager({ productsAPI, approveAll })
+exports = module.exports = function createEmployeeManager (opts) {
+  return new EmployeeManager(opts)
 }
 
-function EmployeeManager ({ productsAPI, approveAll }) {
+function EmployeeManager ({
+  productsAPI,
+  approveAll,
+  unwrapForEmployee
+}) {
   bindAll(this)
 
   // assign relationship manager to customers
   // forward messages between customer and relationship manager
   this.productsAPI = productsAPI
   this._approveAll = approveAll
+  this._unwrapForEmployee = unwrapForEmployee
   // const assignRMModel = createAssignRMModel({ productsAPI })
   const assignRMModel = productsAPI.models.all[ASSIGN_RM]
 
@@ -59,7 +64,7 @@ function EmployeeManager ({ productsAPI, approveAll }) {
 
 const proto = EmployeeManager.prototype
 
-proto._maybeForwardToEmployee = co(function* ({ req, forward }) {
+proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   const { bot } = this
   const { user, message } = req
   const { object } = message
@@ -90,7 +95,9 @@ proto._maybeForwardToEmployee = co(function* ({ req, forward }) {
   }
 
   debug(`forwarding ${type} from ${user.id} to employee ${forward}`)
-  yield this.reSignAndForward({ req, to: forward })
+  // don't unwrap-and-re-sign
+  yield this.forwardMessage({ req, to: forward })
+  // yield this.reSignAndForward({ req, to: forward })
 })
 
 proto.reSignAndForward = co(function* ({ req, to }) {
@@ -174,7 +181,7 @@ proto._onmessage = co(function* (req) {
   const type = object[TYPE]
   // forward from employee to customer
   if (forward) {
-    yield this._maybeForwardToEmployee({ req, forward })
+    yield this._maybeForwardToOrFromEmployee({ req, forward })
     // prevent default processing
     debug('preventing further processing of inbound message')
     return false
@@ -216,7 +223,7 @@ proto.forwardMessage = function forwardMessage ({ req, object, to, other={} }) {
   // delete other.forward
   const { user, message } = req
   if (!object) {
-    object = req.message.object
+    object = this._unwrapForEmployee ? message.object : message
   }
 
   other.originalSender = user.id
@@ -403,6 +410,7 @@ proto._didSend = co(function* (input, sentObject) {
 
   other = shallowClone(other)
   other.originalRecipient = to.id || to
+  // nothing to unwrap here, this is an original from our bot
   yield this.forwardMessage({
     req,
     other,
