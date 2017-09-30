@@ -29,7 +29,7 @@ exports = module.exports = function createEmployeeManager (opts) {
 function EmployeeManager ({
   productsAPI,
   approveAll,
-  unwrapForEmployee
+  wrapForEmployee
 }) {
   bindAll(this)
 
@@ -37,7 +37,7 @@ function EmployeeManager ({
   // forward messages between customer and relationship manager
   this.productsAPI = productsAPI
   this._approveAll = approveAll
-  this._unwrapForEmployee = unwrapForEmployee
+  this._wrapForEmployee = wrapForEmployee
   // const assignRMModel = createAssignRMModel({ productsAPI })
   const assignRMModel = productsAPI.models.all[ASSIGN_RM]
 
@@ -223,7 +223,7 @@ proto.forwardMessage = function forwardMessage ({ req, object, to, other={} }) {
   // delete other.forward
   const { user, message } = req
   if (!object) {
-    object = this._unwrapForEmployee ? message.object : message
+    object = this._wrapForEmployee ? message : message.object
   }
 
   other.originalSender = user.id
