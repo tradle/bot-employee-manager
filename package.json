@@ -14,6 +14,7 @@
     "@tradle/engine": "^4.10.3",
     "@tradle/merge-models": "^2.0.0",
     "@tradle/models": "github:tradle/models",
+    "bluebird": "^3.5.0",
     "eslint": "^3.17.1",
     "husky": "^0.13.2",
     "sinon": "^3.2.1",

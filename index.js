@@ -11,10 +11,8 @@ const {
 } = require('./utils')
 
 const PACKAGE_NAME = require('./package').name
-const STORAGE_KEY = PACKAGE_NAME
 const EMPLOYEE_ONBOARDING = 'tradle.EmployeeOnboarding'
 const EMPLOYEE_PASS = 'tradle.MyEmployeeOnboarding'
-const APPLICATION = 'tradle.Application'
 const ASSIGN_RM = 'tradle.AssignRelationshipManager'
 const APPROVED = 'tradle.ApplicationApproval'
 const DENIAL = 'tradle.ApplicationDenial'
@@ -60,6 +58,14 @@ function EmployeeManager ({
   productsAPI.plugins.use({
     onmessage: this._onmessage,
   }, true)
+
+  productsAPI.plugins.use({
+    didApproveApplication: ({ req }, certificate) => {
+      if (certificate[TYPE] == EMPLOYEE_PASS) {
+        this._addEmployeeRole(req.user)
+      }
+    }
+  })
 }
 
 const proto = EmployeeManager.prototype
@@ -180,28 +186,30 @@ proto._onmessage = co(function* (req) {
   const { object, forward } = message
   const type = object[TYPE]
   // forward from employee to customer
+  if (this.isEmployee(user)) {
+    if (type === APPROVED || type === DENIAL) {
+      yield this.approveOrDeny({
+        req,
+        approvedBy: user,
+        application,
+        judgment: object
+      })
+
+      return
+    }
+
+    // assign relationship manager
+    if (type === ASSIGN_RM) {
+      yield this._maybeAssignRM({ req, assignment: object })
+      return
+    }
+  }
+
   if (forward) {
     yield this._maybeForwardToOrFromEmployee({ req, forward })
     // prevent default processing
     debug('preventing further processing of inbound message')
     return false
-  }
-
-  // assign relationship manager
-  if (type === ASSIGN_RM) {
-    yield this._maybeAssignRM({ req, assignment: object })
-    return
-  }
-
-  if (type === APPROVED || type === DENIAL) {
-    yield this.approveOrDeny({
-      req,
-      approvedBy: user,
-      application,
-      judgment: object
-    })
-
-    return
   }
 
   if (!application) return
@@ -331,7 +339,6 @@ proto.hire = function hire (req) {
     }
   }
 
-  this._addEmployeeRole(user)
   return productsAPI.approveApplication({ req })
 }
 

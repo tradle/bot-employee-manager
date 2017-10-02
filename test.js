@@ -1,8 +1,12 @@
+global.Promise = require('bluebird')
+
+const crypto = require('crypto')
 const { EventEmitter } = require('events')
 const co = require('co').wrap
 const test = require('tape')
 const sinon = require('sinon')
 const extend = require('xtend/mutable')
+const createProductsStrategy = require('@tradle/bot-products')
 const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
 const baseModels = require('@tradle/merge-models')()
@@ -23,18 +27,24 @@ test('basic', co(function* (t) {
     identity: {
       id: 'tradle.Identity_bill_123'
     },
-    roles: [{ id: 'Role_employee' }]
+    roles: [{ id: 'test.Role_employee' }]
+  }
+
+  const customerIdentityStub = {
+    id: 'tradle.Identity_ted_123'
+  }
+
+  const application = {
+    applicant: customerIdentityStub,
+    context: newLink()
   }
 
   const customer = {
     id: 'ted',
-    identity: {
-      id: 'tradle.Identity_ted_123'
-    }
-  }
-
-  const application = {
-    applicant: customer.identity
+    identity: customerIdentityStub,
+    applications: [
+      application
+    ]
   }
 
   const applicationId = buildResource.id({
@@ -44,95 +54,24 @@ test('basic', co(function* (t) {
   })
 
   let onmessage
-  const productsAPI = extend(new EventEmitter(), {
-    bot: {
-      db: {},
-      reSign: sinon.stub().callsFake(object => {
-        object[SIG] += '1'
-        return Promise.resolve(object)
-      }),
-      getMyIdentity: sinon.stub().resolves({ _permalink: 'zzz' }),
-      addressBook: {
-        byPermalink: permalink => {
-          if (permalink !== customer.id && permalink !== relationshipManager.id) {
-            throw new Error('expected customer or relationshipManager')
-          }
-
-          return {}
-        }
-      },
-      users: {
-        get: co(function* (link) {
-          if (link === customer.id) {
-            return customer
-          }
-
-          if (link === relationshipManager.id) {
-            return relationshipManager
-          }
-
-          throw new Error('user not found')
-        }),
-        merge: sinon.stub()
-      },
-    },
-    saveNewVersionOfApplication: sinon.stub().resolves({}),
-    getApplicationByStub: sinon.stub().resolves(application),
-    state: {
-      getApplicationsByType: sinon.stub().returns(application),
-    },
-    models: {
-      all: baseModels,
-      private: {
-        role: {
-          id: 'Role',
-          enum: [
-            { id: 'employee' }
-          ]
-        }
-      }
-    },
-    plugins: {
-      use: function (plugin) {
-        onmessage = plugin.onmessage
-      }
-    },
-    addProducts: function () {
-
-    },
-    send: co(function* ({ req, object, to, other }) {
-      // const expected = expectedSends.shift()
-      // t.equal(userId, expected.to)
-      // t.equal(object[TYPE], expected.type)
-    })
+  const { api, manager, bot, receive } = newMock({
+    users: [
+      customer,
+      relationshipManager
+    ],
+    application
   })
 
-  let sendSpy = sinon.spy(productsAPI, 'send')
-  const manager = manageMonkeys({ productsAPI })
-  productsAPI.emit('bot', productsAPI.bot)
+  let sendSpy = sinon.spy(api, 'send')
+  api.emit('bot', bot)
 
-  // const expectedSends = [
-  //   {
-  //     to: relationshipManager,
-  //     type: 'tradle.MyEmployeeOnboarding'
-  //   },
-  //   {
-  //     to: relationshipManager,
-  //     type: 'tradle.Introduction'
-  //   },
-  //   {
-  //     to: customer,
-  //     type: 'tradle.FormRequest'
-  //   }
-  // ]
-
-  productsAPI.bot.db.find = sinon.stub().returns(Promise.resolve({ items: [] }))
-  yield onmessage({
+  yield receive({
     user: relationshipManager,
     application,
     message: {
       object: {
         [TYPE]: 'tradle.AssignRelationshipManager',
+        [SIG]: newSig(),
         employee: relationshipManager.identity,
         application: {
           id: applicationId
@@ -144,17 +83,20 @@ test('basic', co(function* (t) {
 
   t.equal(sendSpy.getCall(0).args[0].object[TYPE], 'tradle.Introduction')
   t.equal(sendSpy.getCall(1).args[0].object[TYPE], 'tradle.Introduction')
-  t.equal(productsAPI.saveNewVersionOfApplication.callCount, 1)
+  t.equal(api.saveNewVersionOfApplication.callCount, 1)
 
   sendSpy.restore()
-  sendSpy = sinon.spy(productsAPI, 'send')
+  sendSpy = sinon.spy(api, 'send')
+  const reSignSpy = sinon.spy(bot, 'reSign')
 
-  yield onmessage({
+  yield receive({
     user: customer,
     application,
     message: {
+      // forward: customer.id,
       object: {
         [TYPE]: 'tradle.SimpleMessage',
+        [SIG]: newSig(),
         message: 'hey'
       }
     }
@@ -165,12 +107,12 @@ test('basic', co(function* (t) {
   t.equal(fwdHey.object.message, 'hey')
   t.equal(fwdHey.to, relationshipManager.id)
   t.equal(fwdHey.other.originalSender, customer.id)
-  t.equal(productsAPI.bot.reSign.callCount, 0)
+  t.equal(reSignSpy.callCount, 0)
 
   sendSpy.restore()
-  sendSpy = sinon.spy(productsAPI, 'send')
+  sendSpy = sinon.spy(api, 'send')
 
-  yield onmessage({
+  yield receive({
     user: relationshipManager,
     // no application specified
     message: {
@@ -187,10 +129,10 @@ test('basic', co(function* (t) {
   t.equal(fwdHo.object.message, 'ho')
   t.equal(fwdHo.to, customer.id)
   t.equal(fwdHo.other.originalSender, relationshipManager.id)
-  t.equal(productsAPI.bot.reSign.callCount, 1)
+  t.equal(reSignSpy.callCount, 1)
 
   sendSpy.restore()
-  sendSpy = sinon.spy(productsAPI, 'send')
+  sendSpy = sinon.spy(api, 'send')
 
   t.end()
 
@@ -232,3 +174,164 @@ test('basic', co(function* (t) {
   //   return new Promise(resolve => bot.once('message', resolve))
   // }
 }))
+
+function fakeBot ({ users }) {
+  const handlers = []
+  const bot = {
+    db: {
+      find: () => Promise.resolve({ items: [] })
+    },
+    sign: object => {
+      object[SIG] = crypto.randomBytes(128).toString('hex')
+      return Promise.resolve(object)
+    },
+    reSign: object => {
+      return bot.sign(object)
+    },
+    seal: sinon.stub().callsFake(function ({ link }) {
+      if (typeof link !== 'string') {
+        return Promise.reject(new Error('expected string link'))
+      }
+
+      return Promise.resolve()
+    }),
+    getMyIdentity: () => ({ _permalink: 'zzz' }),
+    addressBook: {
+      byPermalink: permalink => {
+        if (users.some(({ id }) => id === permalink)) {
+          return {}
+        }
+
+        throw new Error('identity not found')
+      }
+    },
+    users: {
+      get: co(function* (permalink) {
+        const user = users.find(user => user.id === permalink)
+        if (!user) {
+          throw new Error('user not found')
+        }
+
+        return user
+      }),
+      merge: () => {
+        throw new Error('users.merge is not mocked')
+      }
+    },
+    presignEmbeddedMediaLinks: object => Promise.resolve(object),
+    onmessage: handler => handlers.push(handler),
+    send: co(function* () {
+
+    })
+  }
+
+  const receive = req => {
+    if (req.application) {
+      req.context = req.application.context
+    }
+
+    normalizeReq(req)
+    return series(handlers, handler => handler(req))
+  }
+
+  return {
+    bot,
+    receive
+  }
+}
+
+function newMock ({ users, application }) {
+  const { bot, receive } = fakeBot({ users })
+  const productsAPI = createProductsStrategy({
+    namespace: 'test',
+    models: {
+      all: baseModels,
+      private: {
+        role: {
+          id: 'test.Role',
+          enum: [
+            { id: 'employee' }
+          ]
+        }
+      }
+    },
+    products: []
+  })
+
+  if (application) {
+    sinon.stub(productsAPI, 'getApplicationByStub').resolves(application)
+    sinon.stub(productsAPI.state, 'getApplicationsByType').returns(application)
+    sinon.stub(productsAPI, 'saveNewVersionOfApplication').resolves({})
+  }
+
+  // const api = extend(new EventEmitter(), {
+  //   bot,
+  //   saveNewVersionOfApplication: sinon.stub().resolves({}),
+  //   getApplicationByStub: sinon.stub().resolves(application),
+  //   state: {
+  //     getApplicationsByType: sinon.stub().returns(application),
+  //   },
+  //   models: {
+  //     all: baseModels,
+  //     private: {
+  //       role: {
+  //         id: 'Role',
+  //         enum: [
+  //           { id: 'employee' }
+  //         ]
+  //       }
+  //     }
+  //   },
+  //   plugins: {
+  //     use: function (plugin) {
+  //       onmessage = plugin.onmessage
+  //     }
+  //   },
+  //   addProducts: function () {
+
+  //   },
+  //   send: co(function* ({ req, object, to, other }) {
+  //     // const expected = expectedSends.shift()
+  //     // t.equal(userId, expected.to)
+  //     // t.equal(object[TYPE], expected.type)
+  //   })
+  // })
+
+  productsAPI.install(bot)
+  const manager = manageMonkeys({ productsAPI })
+  return {
+    bot,
+    receive,
+    api: productsAPI,
+    manager
+  }
+}
+
+const series = co(function* (arr, fn) {
+  for (const arg of arr) {
+    const ret = fn(arg)
+    if (isPromise(ret)) yield ret
+  }
+})
+
+function normalizeReq (req) {
+  const { user, message } = req
+  if (!req.object) req.object = message.object
+  if (!req.type) req.type = req.object[TYPE]
+  if (!req.link) req.link = newLink()
+  if (!req.permalink) req.permalink = newLink()
+  // if (!req.forward) req.forward = message.forward
+  return req
+}
+
+function isPromise (obj) {
+  return obj && typeof obj.then === 'function'
+}
+
+function newSig () {
+  return crypto.randomBytes(128).toString('base64')
+}
+
+function newLink () {
+  return crypto.randomBytes(32).toString('hex')
+}
