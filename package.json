@@ -10,10 +10,12 @@
     "@tradle/models": "*"
   },
   "devDependencies": {
+    "@tradle/bot-products": "github:tradle/bot-products#modeled",
     "@tradle/custom-models": "github:tradle/custom-models",
     "@tradle/engine": "^4.10.3",
     "@tradle/merge-models": "^2.0.0",
     "@tradle/models": "github:tradle/models",
+    "@tradle/validate-model": "2.3.0",
     "bluebird": "^3.5.0",
     "eslint": "^3.17.1",
     "husky": "^0.13.2",
@@ -28,7 +30,7 @@
   "dependencies": {
     "@tradle/build-resource": "^2.7.0",
     "@tradle/constants": "^2.1.0",
-    "@tradle/validate-model": "^2.0.2",
+    "@tradle/validate-model": ">=2.3 <4",
     "@tradle/validate-resource": "^2.8.0",
     "bindall": "^2.0.1",
     "co": "^4.6.0",
