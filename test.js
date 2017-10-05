@@ -89,11 +89,11 @@ test('basic', co(function* (t) {
   sendSpy = sinon.spy(api, 'send')
   const reSignSpy = sinon.spy(bot, 'reSign')
 
+  // forward to relationship manager
   yield receive({
     user: customer,
     application,
     message: {
-      // forward: customer.id,
       object: {
         [TYPE]: 'tradle.SimpleMessage',
         [SIG]: newSig(),
@@ -102,7 +102,6 @@ test('basic', co(function* (t) {
     }
   })
 
-  // forward to relationship manager
   const fwdHey = sendSpy.getCall(0).args[0]
   t.equal(fwdHey.object.message, 'hey')
   t.equal(fwdHey.to, relationshipManager.id)
@@ -112,6 +111,7 @@ test('basic', co(function* (t) {
   sendSpy.restore()
   sendSpy = sinon.spy(api, 'send')
 
+  // forward from relationship manager
   yield receive({
     user: relationshipManager,
     // no application specified
@@ -124,7 +124,6 @@ test('basic', co(function* (t) {
     }
   })
 
-  // forward from relationship manager
   const fwdHo = sendSpy.getCall(0).args[0]
   t.equal(fwdHo.object.message, 'ho')
   t.equal(fwdHo.to, customer.id)
@@ -133,6 +132,28 @@ test('basic', co(function* (t) {
 
   sendSpy.restore()
   sendSpy = sinon.spy(api, 'send')
+
+  // forward from relationship manager
+  // don't re-sign if original is authored by bot
+  const botIdentity = yield bot.getMyIdentity()
+  yield receive({
+    user: relationshipManager,
+    // no application specified
+    message: {
+      forward: customer.id,
+      object: {
+        [TYPE]: 'tradle.SimpleMessage',
+        message: 'hey ho',
+        _author: botIdentity._permalink
+      }
+    }
+  })
+
+  const fwdHeyHo = sendSpy.getCall(0).args[0]
+  t.equal(fwdHeyHo.object.message, 'hey ho')
+  t.equal(fwdHeyHo.to, customer.id)
+  t.equal(fwdHeyHo.other.originalSender, relationshipManager.id)
+  t.equal(reSignSpy.callCount, 1)
 
   t.end()
 
@@ -195,7 +216,7 @@ function fakeBot ({ users }) {
 
       return Promise.resolve()
     }),
-    getMyIdentity: () => ({ _permalink: 'zzz' }),
+    getMyIdentity: () => Promise.resolve({ _permalink: 'zzz' }),
     addressBook: {
       byPermalink: permalink => {
         if (users.some(({ id }) => id === permalink)) {

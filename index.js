@@ -76,14 +76,14 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   const { object } = message
   const type = object[TYPE]
   if (this.isEmployee(user)) {
-    const me = yield this.bot.getMyIdentity()
-    if (me._permalink === forward) {
+    const myIdentity = yield this.bot.getMyIdentity()
+    if (myIdentity._permalink === forward) {
       debug(`not forwarding ${type} ${object._link} to self`)
       return
     }
 
     debug(`forwarding ${type} from employee ${user.id} to ${forward}`)
-    yield this.reSignAndForward({ req, to: forward })
+    yield this.reSignAndForward({ req, to: forward, myIdentity })
     return
   }
 
@@ -106,10 +106,17 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   // yield this.reSignAndForward({ req, to: forward })
 })
 
-proto.reSignAndForward = co(function* ({ req, to }) {
+proto.reSignAndForward = co(function* ({ req, to, myIdentity }) {
   const { user, message } = req
-  const object = yield this.bot.reSign(message.object)
+  let { object } = message
   const type = object[TYPE]
+  if (myIdentity._permalink == object._author) {
+    debug('not re-signing, as original is also signed by me')
+  } else {
+    debug(`re-signing ${type} before forwarding to ${to}`)
+    object = yield this.bot.reSign(object)
+  }
+
   const other = {
     originalSender: user.id
   }
