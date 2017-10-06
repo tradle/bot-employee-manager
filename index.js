@@ -241,6 +241,11 @@ proto.forwardToEmployee = function forwardToEmployee ({ req, object, to, other={
     object = this._wrapForEmployee ? message : message.object
   }
 
+  if (!other.context && message.context) {
+    debug(`forwarding context: ${message.context}`)
+    other.context = message.context
+  }
+
   other.originalSender = user.id
   return this.productsAPI.send({ req, to, object, other })
 }

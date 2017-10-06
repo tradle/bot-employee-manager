@@ -94,6 +94,7 @@ test('basic', co(function* (t) {
     user: customer,
     application,
     message: {
+      context: application.context,
       object: {
         [TYPE]: 'tradle.SimpleMessage',
         [SIG]: newSig(),
@@ -106,6 +107,7 @@ test('basic', co(function* (t) {
   t.equal(fwdHey.object.message, 'hey')
   t.equal(fwdHey.to, relationshipManager.id)
   t.equal(fwdHey.other.originalSender, customer.id)
+  t.equal(fwdHey.other.context, application.context)
   t.equal(reSignSpy.callCount, 0)
 
   sendSpy.restore()
