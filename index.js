@@ -57,6 +57,7 @@ function EmployeeManager ({
   // prepend
   productsAPI.plugins.use({
     onmessage: this._onmessage,
+    deduceApplication: this._deduceApplication
   }, true)
 
   productsAPI.plugins.use({
@@ -69,6 +70,14 @@ function EmployeeManager ({
 }
 
 const proto = EmployeeManager.prototype
+
+proto._deduceApplication = function _deduceApplication (req) {
+  const { message } = req
+  if (message && message.forward) {
+    // ignore
+    return false
+  }
+}
 
 proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   const { bot } = this
