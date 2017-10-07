@@ -19,6 +19,7 @@ const DENIAL = 'tradle.ApplicationDenial'
 const INTRODUCTION = 'tradle.Introduction'
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
+const alwaysTrue = () => true
 
 exports = module.exports = function createEmployeeManager (opts) {
   return new EmployeeManager(opts)
@@ -27,7 +28,9 @@ exports = module.exports = function createEmployeeManager (opts) {
 function EmployeeManager ({
   productsAPI,
   approveAll,
-  wrapForEmployee
+  wrapForEmployee,
+  shouldForwardFromEmployee=alwaysTrue,
+  shouldForwardToEmployee=alwaysTrue
 }) {
   bindAll(this)
 
@@ -36,6 +39,8 @@ function EmployeeManager ({
   this.productsAPI = productsAPI
   this._approveAll = approveAll
   this._wrapForEmployee = wrapForEmployee
+  this._shouldForwardToEmployee = shouldForwardToEmployee
+  this._shouldForwardFromEmployee = shouldForwardFromEmployee
   // const assignRMModel = createAssignRMModel({ productsAPI })
   const assignRMModel = productsAPI.models.all[ASSIGN_RM]
 
@@ -91,6 +96,15 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
       return
     }
 
+    const shouldForward = yield Promise.resolve(
+      this._shouldForwardFromEmployee({ req })
+    )
+
+    if (!shouldForward) {
+      debug(`not forwarding ${type} from employee ${user.id} to ${forward}`)
+      return
+    }
+
     debug(`forwarding ${type} from employee ${user.id} to ${forward}`)
     yield this.reSignAndForward({ req, to: forward, myIdentity })
     return
@@ -106,6 +120,15 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
 
   if (!this.isEmployee(recipient)) {
     debug(`refusing to forward: neither sender "${user.id}" nor recipient "${forward}" is an employee`)
+    return
+  }
+
+  const shouldForward = yield Promise.resolve(
+    this._shouldForwardToEmployee({ req })
+  )
+
+  if (!shouldForward) {
+    debug(`not forwarding ${type} from ${user.id} to employee ${forward}`)
     return
   }
 
