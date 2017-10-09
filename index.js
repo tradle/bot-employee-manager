@@ -148,6 +148,10 @@ proto.reSignAndForward = co(function* ({ req, to, myIdentity }) {
   } else {
     debug(`re-signing ${type} before forwarding to ${to}`)
     object = yield this.bot.reSign(object)
+    buildResource.setVirtual(object, {
+      _time: object.time || Date.now()
+    })
+
     yield this.bot.db.put(object)
   }
 
