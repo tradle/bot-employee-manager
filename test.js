@@ -202,7 +202,8 @@ function fakeBot ({ users }) {
   const handlers = []
   const bot = {
     db: {
-      find: () => Promise.resolve({ items: [] })
+      find: () => Promise.resolve({ items: [] }),
+      put: obj => Promise.resolve()
     },
     sign: object => {
       object[SIG] = crypto.randomBytes(128).toString('hex')

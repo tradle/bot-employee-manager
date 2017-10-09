@@ -17,6 +17,7 @@ const ASSIGN_RM = 'tradle.AssignRelationshipManager'
 const APPROVED = 'tradle.ApplicationApproval'
 const DENIAL = 'tradle.ApplicationDenial'
 const INTRODUCTION = 'tradle.Introduction'
+const SHARE_REQUEST = 'tradle.ShareRequest'
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 const alwaysTrue = () => true
@@ -147,6 +148,7 @@ proto.reSignAndForward = co(function* ({ req, to, myIdentity }) {
   } else {
     debug(`re-signing ${type} before forwarding to ${to}`)
     object = yield this.bot.reSign(object)
+    yield this.bot.db.put(object)
   }
 
   const other = {
@@ -242,6 +244,11 @@ proto._onmessage = co(function* (req) {
       yield this._maybeAssignRM({ req, assignment: object })
       return
     }
+
+    if (type === SHARE_REQUEST) {
+      yield this._onShareRequest({ req })
+      return
+    }
   }
 
   if (forward) {
@@ -264,6 +271,20 @@ proto._onmessage = co(function* (req) {
     })
   }
 })
+
+proto._onShareRequest = function ({ req }) {
+  const { object } = req
+  return Promise.all(object.links.map(link => {
+    return Promise.all(object.with.map(identityStub => {
+      const { permalink } = parseStub(identityStub)
+      return this.productsAPI.send({
+        req,
+        to: permalink,
+        link
+      })
+    }))
+  }))
+}
 
 proto.forwardToEmployee = function forwardToEmployee ({ req, object, to, other={} }) {
   // const other = getCustomMessageProperties(message)
