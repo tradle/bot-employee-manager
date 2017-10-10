@@ -277,8 +277,14 @@ proto._onmessage = co(function* (req) {
 })
 
 proto._onShareRequest = function ({ req }) {
-  const { object } = req
+  const { user, object, message } = req
   debug(`processing ${SHARE_REQUEST}`, JSON.stringify(object, null, 2))
+  const other = {
+    originalSender: user.id
+  }
+
+  if (message.context) other.context = message.context
+
   return Promise.all(object.links.map(link => {
     return Promise.all(object.with.map(identityStub => {
       const { permalink } = parseStub(identityStub)
@@ -286,7 +292,8 @@ proto._onShareRequest = function ({ req }) {
       return this.productsAPI.send({
         req,
         to: permalink,
-        link
+        link,
+        other
       })
     }))
   }))
