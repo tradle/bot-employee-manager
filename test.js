@@ -36,7 +36,8 @@ test('basic', co(function* (t) {
 
   const application = {
     applicant: customerIdentityStub,
-    context: newLink()
+    context: newLink(),
+    requestFor: 'tradle.CurrentAccount'
   }
 
   const customer = {
@@ -67,8 +68,9 @@ test('basic', co(function* (t) {
 
   yield receive({
     user: relationshipManager,
-    application,
+    // application,
     message: {
+      context: application.context,
       object: {
         [TYPE]: 'tradle.AssignRelationshipManager',
         [SIG]: newSig(),

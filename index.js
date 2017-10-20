@@ -85,6 +85,82 @@ proto._deduceApplication = function _deduceApplication (req) {
   }
 }
 
+/**
+ * Attempt to detect the employee to forward the message to based on the "context"
+ *
+ */
+proto._maybeForwardByContext = co(function* ({ req }) {
+  const { user, context } = req
+  // don't forward employee to employee
+  if (!context || this.isEmployee(user)) return
+
+  const { bot } = this
+  let last
+  try {
+    last = yield this._getLastInboundMessageByContext({ user, context })
+  } catch (err) {
+    debug('failed to determine forward target by context', err.message)
+    return
+  }
+
+  debug(`found forward target candidate ${JSON.stringify(last)} by context ${context}`)
+  const { _author } = last
+  const candidate = yield bot.users.get(_author)
+  if (!this.isEmployee(candidate)) return
+
+  const type = req.message.object[TYPE]
+  debug(`forwarding ${type} to ${_author} for context ${context}`)
+  yield this.forwardToEmployee({
+    req,
+    to: candidate.id,
+    other: { context }
+  })
+})
+
+proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
+  if (this.models['tradle.Message'].isInterface) {
+    const results = yield this.bot.messages.inbox.find({
+      IndexName: 'context',
+      KeyConditionExpression: '#context = :context',
+      FilterExpression: '#author <> :author',
+      ExpressionAttributeNames: {
+        '#context': 'context',
+        '#author': '_author'
+      },
+      ExpressionAttributeValues: {
+        ':context': context,
+        ':author': user.id
+      },
+      ScanIndexForward: false,
+      Limit: 10
+    })
+
+    if (!results.length) {
+      throw new Error('NotFound')
+    }
+
+    return results[0]
+  }
+
+  return yield this.bot.db.findOne({
+    select: ['_author'],
+    filter: {
+      EQ: {
+        [TYPE]: 'tradle.Message',
+        _inbound: true,
+        context
+      },
+      NEQ: {
+        _author: user.id
+      }
+    },
+    orderBy: {
+      property: 'time',
+      desc: true
+    }
+  })
+})
+
 proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   const { bot } = this
   const { user, message } = req
@@ -262,7 +338,10 @@ proto._onmessage = co(function* (req) {
     return false
   }
 
-  if (!application) return
+  if (!application) {
+    yield this._maybeForwardByContext({ req })
+    return
+  }
 
   // forward from customer to relationship manager
   const { relationshipManager } = application
