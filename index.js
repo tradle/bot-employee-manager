@@ -253,7 +253,6 @@ proto._maybeAssignRM = co(function* ({ req, assignment }) {
   const relationshipManager = parseStub(assignment.employee).permalink
   const applicationResource = yield productsAPI.getApplicationByStub(assignment.application)
   const applicant = parseStub(applicationResource.applicant).permalink
-  debug(`assigning relationship manager ${relationshipManager} to user ${applicant}`)
   yield this.assignRelationshipManager({
     req,
     applicant,
@@ -436,6 +435,11 @@ proto.assignRelationshipManager = co(function* ({
       ? bot.users.get(userOrId)
       : Promise.resolve(userOrId)
   })
+
+  debug(`assigning relationship manager ${rmID} to user ${applicant.id}`)
+  if (application.relationshipManager) {
+    debug(`previous relationship manager: ${parseStub(application.relationshipManager).permalink}`)
+  }
 
   application.relationshipManager = relationshipManager.identity
 
