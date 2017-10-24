@@ -56,7 +56,7 @@ function EmployeeManager ({
   productsAPI.plugins.use({
     onFormsCollected: this._onFormsCollected,
     willSend: this._willSend,
-    didSend: this._didSend
+    // didSend: this._didSend
     // willSign: setEntityRole
   })
 
@@ -560,32 +560,33 @@ proto._willSend = function _willSend (opts) {
 
 // forward any messages sent by the bot
 // to the relationship manager
-proto._didSend = co(function* (input, sentObject) {
-  let { req, to, other={} } = input
-  const { user, message, application } = req
-  if (!application) return
+// proto._didSend = co(function* (input, sentObject) {
+//   let { req, to, other={} } = input
+//   const { user, message, application } = req
+//   if (!application) return
 
-  let { relationshipManager } = application
-  if (!relationshipManager) return
+//   let { relationshipManager } = application
+//   if (!relationshipManager) return
 
-  relationshipManager = parseStub(relationshipManager).permalink
-  // avoid infinite loop of sending to the same person
-  // and then forwarding, and then forwarding, and then forwarding...
-  if (to === relationshipManager) return
+//   relationshipManager = parseStub(relationshipManager).permalink
+//   // avoid infinite loop of sending to the same person
+//   // and then forwarding, and then forwarding, and then forwarding...
+//   if (to === relationshipManager) return
 
-  const { originalSender } = other
-  if (originalSender === relationshipManager) return
+//   const { originalSender } = other
+//   if (originalSender === relationshipManager) return
 
-  other = shallowClone(other)
-  other.originalRecipient = to.id || to
-  // nothing to unwrap here, this is an original from our bot
-  yield this.forwardToEmployee({
-    req,
-    other,
-    object: sentObject,
-    to: relationshipManager
-  })
-})
+//   other = shallowClone(other)
+//   delete other.originalSender
+//   other.originalRecipient = to.id || to
+//   // nothing to unwrap here, this is an original from our bot
+//   yield this.forwardToEmployee({
+//     req,
+//     other,
+//     object: sentObject,
+//     to: relationshipManager
+//   })
+// })
 
 proto._addEmployeeRole = function _addEmployeeRole (user) {
   const employeeRole = buildResource.enumValue({
