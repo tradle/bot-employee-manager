@@ -403,8 +403,10 @@ proto.list =
 proto.listEmployees = co(function* (opts={}) {
   const { limit } = opts
   const { items } = yield this.bot.db.find({
-    type: EMPLOYEE_PASS,
     filter: {
+      EQ: {
+        [TYPE]: EMPLOYEE_PASS,
+      },
       NEQ: {
         revoked: true
       }
