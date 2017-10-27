@@ -10,6 +10,7 @@ const {
   bindAll
 } = require('./utils')
 
+const debugObj = obj => debug(JSON.stringify(obj, null, 2))
 const PACKAGE_NAME = require('./package').name
 const EMPLOYEE_ONBOARDING = 'tradle.EmployeeOnboarding'
 const EMPLOYEE_PASS = 'tradle.MyEmployeeOnboarding'
@@ -109,7 +110,15 @@ proto._maybeForwardByContext = co(function* ({ req }) {
   if (!this.isEmployee(candidate)) return
 
   const type = req.message.object[TYPE]
-  debug(`forwarding ${type} to ${_author} for context ${context}`)
+  debug('forwarding')
+  debugObj({
+    to: 'guessed employee based on context',
+    type,
+    context,
+    author: user.id,
+    recipient: candidate.id
+  })
+
   yield this.forwardToEmployee({
     req,
     to: candidate.id,
@@ -182,7 +191,15 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
       return
     }
 
-    debug(`forwarding ${type} from employee ${user.id} to ${forward}`)
+    debug('forwarding')
+    debugObj({
+      to: 'customer (specified by employee in message.forward)',
+      type: type,
+      context: message.context,
+      author: user.id,
+      recipient: forward
+    })
+
     yield this.reSignAndForward({ req, to: forward, myIdentity })
     return
   }
@@ -209,7 +226,15 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
     return
   }
 
-  debug(`forwarding ${type} from ${user.id} to employee ${forward}`)
+  debug('forwarding')
+  debugObj({
+    to: 'employee (specified in message.forward)',
+    type: type,
+    context: message.context,
+    author: user.id,
+    recipient: forward
+  })
+
   // don't unwrap-and-re-sign
   yield this.forwardToEmployee({ req, to: forward })
   // yield this.reSignAndForward({ req, to: forward })
@@ -346,7 +371,15 @@ proto._onmessage = co(function* (req) {
   const { relationshipManager } = application
   if (relationshipManager) {
     const rmPermalink = parseStub(relationshipManager).permalink
-    debug(`forwarding ${type} to relationship manager ${rmPermalink}`)
+    debug('forwarding')
+    debugObj({
+      to: 'rm',
+      type,
+      context: message.context,
+      author: user.id,
+      recipient: rmPermalink
+    })
+
     yield this.forwardToEmployee({
       req,
       to: rmPermalink
@@ -386,7 +419,7 @@ proto.forwardToEmployee = function forwardToEmployee ({ req, object, to, other={
   }
 
   if (!other.context && message.context) {
-    debug(`forwarding context: ${message.context}`)
+    debug(`propagating context ${message.context} on forwarded message`)
     other.context = message.context
   }
 
@@ -577,6 +610,15 @@ proto._didSend = co(function* (input, sentObject) {
 
   const { originalSender } = other
   if (originalSender === relationshipManager) return
+
+  debug('forwarding')
+  debugObj({
+    type: sentObject[TYPE],
+    to: 'rm',
+    author: 'this bot',
+    recipient: relationshipManager,
+    originalRecipient: req.user.id
+  })
 
   other = shallowClone(other)
   other.originalRecipient = to.id || to
