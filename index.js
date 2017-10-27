@@ -582,9 +582,9 @@ proto.mutuallyIntroduce = co(function* ({ req, a, b }) {
 })
 
 proto._willSend = function _willSend (opts) {
-  const { req, other={} } = opts
-  const { message } = req
-  const originalSender = message && message.originalSender
+  const { req={}, other={} } = opts
+  const { message={} } = req
+  const { originalSender } = message
   if (originalSender) {
     debug('setting "forward" based on original sender')
     other.forward = originalSender
