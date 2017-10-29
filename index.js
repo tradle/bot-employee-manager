@@ -478,7 +478,13 @@ proto.assignRelationshipManager = co(function* ({
 
   application.relationshipManager = relationshipManager.identity
 
-  const promiseIntro = this.mutuallyIntroduce({ req, a: applicant, b: relationshipManager })
+  const promiseIntro = this.mutuallyIntroduce({
+    req,
+    a: applicant,
+    b: relationshipManager,
+    context: application.context
+  })
+
   const promiseSaveApplication = productsAPI.saveNewVersionOfApplication({
     user: applicant,
     application
@@ -561,7 +567,7 @@ proto.fire = function fire (req) {
   return productsAPI.revokeCertificate({ user, application })
 }
 
-proto.mutuallyIntroduce = co(function* ({ req, a, b }) {
+proto.mutuallyIntroduce = co(function* ({ req, a, b, context }) {
   const { bot, productsAPI } = this
   const aPermalink = a.id || a
   const bPermalink = b.id || b
@@ -573,11 +579,21 @@ proto.mutuallyIntroduce = co(function* ({ req, a, b }) {
   ]
 
   const [userA, userB] = yield [getUserA, getUserB]
-  const introduceA = this._createIntroductionFor({ user: a, identity: aIdentity })
-  const introduceB = this._createIntroductionFor({ user: b, identity: bIdentity })
+  const introduceA = this._createIntroductionFor({ req, user: a, identity: aIdentity })
+  const introduceB = this._createIntroductionFor({ req, user: b, identity: bIdentity })
   yield [
-    productsAPI.send({ req, to: userA, object: introduceB }),
-    productsAPI.send({ req, to: userB, object: introduceA })
+    productsAPI.send({
+      req,
+      to: userA,
+      object: introduceB,
+      other: { context }
+    }),
+    productsAPI.send({
+      req,
+      to: userB,
+      object: introduceA,
+      other: { context }
+    })
   ]
 })
 
