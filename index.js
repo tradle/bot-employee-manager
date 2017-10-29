@@ -19,6 +19,7 @@ const APPROVED = 'tradle.ApplicationApproval'
 const DENIAL = 'tradle.ApplicationDenial'
 const INTRODUCTION = 'tradle.Introduction'
 const SHARE_REQUEST = 'tradle.ShareRequest'
+const VERIFICATION = 'tradle.Verification'
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 const alwaysTrue = () => true
@@ -281,6 +282,7 @@ proto._maybeAssignRM = co(function* ({ req, assignment }) {
   yield this.assignRelationshipManager({
     req,
     applicant,
+    assignment,
     relationshipManager: relationshipManager === user.id ? user : relationshipManager,
     application: applicationResource
   })
@@ -454,6 +456,7 @@ proto.assignRelationshipManager = co(function* ({
   req,
   applicant,
   relationshipManager,
+  assignment,
   application
 }) {
   const { bot, productsAPI } = this
@@ -490,9 +493,24 @@ proto.assignRelationshipManager = co(function* ({
     application
   })
 
+  const promiseSendVerification = productsAPI.send({
+    req,
+    to: relationshipManager,
+    object: buildResource({
+        models: this.models,
+        model: VERIFICATION
+      })
+      .set({
+        document: assignment,
+        dateVerified: Date.now()
+      })
+      .toJSON()
+  })
+
   yield [
     promiseIntro,
-    promiseSaveApplication
+    promiseSaveApplication,
+    promiseSendVerification
   ]
 })
 

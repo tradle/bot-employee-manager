@@ -83,8 +83,9 @@ test('basic', co(function* (t) {
     sendQueue: []
   })
 
-  t.equal(sendSpy.getCall(0).args[0].object[TYPE], 'tradle.Introduction')
+  t.equal(sendSpy.getCall(0).args[0].object[TYPE], 'tradle.Verification')
   t.equal(sendSpy.getCall(1).args[0].object[TYPE], 'tradle.Introduction')
+  t.equal(sendSpy.getCall(2).args[0].object[TYPE], 'tradle.Introduction')
   t.equal(api.saveNewVersionOfApplication.callCount, 1)
 
   sendSpy.restore()
