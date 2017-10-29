@@ -481,11 +481,12 @@ proto.assignRelationshipManager = co(function* ({
 
   application.relationshipManager = relationshipManager.identity
 
+  const { context } = application
   const promiseIntro = this.mutuallyIntroduce({
     req,
     a: applicant,
     b: relationshipManager,
-    context: application.context
+    context
   })
 
   const promiseSaveApplication = productsAPI.saveNewVersionOfApplication({
@@ -504,7 +505,8 @@ proto.assignRelationshipManager = co(function* ({
         document: assignment,
         dateVerified: Date.now()
       })
-      .toJSON()
+      .toJSON(),
+    other: { context }
   })
 
   yield [
