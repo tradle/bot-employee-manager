@@ -5,6 +5,7 @@ const { EventEmitter } = require('events')
 const co = require('co').wrap
 const test = require('tape')
 const sinon = require('sinon')
+const clone = require('xtend')
 const extend = require('xtend/mutable')
 const createProductsStrategy = require('@tradle/bot-products')
 const { TYPE, SIG } = require('@tradle/constants')
@@ -124,6 +125,7 @@ test('basic', co(function* (t) {
       forward: customer.id,
       object: {
         [TYPE]: 'tradle.SimpleMessage',
+        [SIG]: newSig(),
         message: 'ho'
       }
     }
@@ -148,6 +150,7 @@ test('basic', co(function* (t) {
       forward: customer.id,
       object: {
         [TYPE]: 'tradle.SimpleMessage',
+        [SIG]: newSig(),
         message: 'hey ho',
         _author: botIdentity._permalink
       }
@@ -206,9 +209,11 @@ function fakeBot ({ users }) {
   const bot = {
     db: {
       find: () => Promise.resolve({ items: [] }),
-      put: obj => Promise.resolve()
+      put: obj => Promise.resolve(),
+      del: obj => Promise.resolve()
     },
     sign: object => {
+      object = clone(object)
       object[SIG] = crypto.randomBytes(128).toString('hex')
       return Promise.resolve(object)
     },
