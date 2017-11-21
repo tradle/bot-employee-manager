@@ -128,7 +128,7 @@ proto._maybeForwardByContext = co(function* ({ req }) {
 })
 
 proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
-  if (this.models['tradle.Message'].isInterface) {
+  // if (this.models['tradle.Message'].isInterface) {
     const results = yield this.bot.messages.inbox.find({
       IndexName: 'context',
       KeyConditionExpression: '#context = :context',
@@ -150,25 +150,25 @@ proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
     }
 
     return results[0]
-  }
+  // }
 
-  return yield this.bot.db.findOne({
-    select: ['_author'],
-    filter: {
-      EQ: {
-        [TYPE]: 'tradle.Message',
-        _inbound: true,
-        context
-      },
-      NEQ: {
-        _author: user.id
-      }
-    },
-    orderBy: {
-      property: 'time',
-      desc: true
-    }
-  })
+  // return yield this.bot.db.findOne({
+  //   select: ['_author'],
+  //   filter: {
+  //     EQ: {
+  //       [TYPE]: 'tradle.Message',
+  //       _inbound: true,
+  //       context
+  //     },
+  //     NEQ: {
+  //       _author: user.id
+  //     }
+  //   },
+  //   orderBy: {
+  //     property: 'time',
+  //     desc: true
+  //   }
+  // })
 })
 
 proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
