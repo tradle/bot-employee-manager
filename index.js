@@ -7,7 +7,8 @@ const {
   getCustomMessageProperties,
   pick,
   shallowClone,
-  bindAll
+  bindAll,
+  uniqueStrings
 } = require('./utils')
 
 const debugObj = obj => debug(JSON.stringify(obj, null, 2))
@@ -17,6 +18,7 @@ const EMPLOYEE_PASS = 'tradle.MyEmployeeOnboarding'
 const ASSIGN_RM = 'tradle.AssignRelationshipManager'
 const APPROVED = 'tradle.ApplicationApproval'
 const DENIAL = 'tradle.ApplicationDenial'
+const IDENTITY = 'tradle.Identity'
 const INTRODUCTION = 'tradle.Introduction'
 const SHARE_REQUEST = 'tradle.ShareRequest'
 const VERIFICATION = 'tradle.Verification'
@@ -704,6 +706,35 @@ proto.isEmployee = function isEmployee (user) {
 
   return user.roles && user.roles.some(role => role.id === id)
 }
+
+proto.haveAllSubmittedFormsBeenManuallyApproved = co(function* ({ application }) {
+  if (!this.productsAPI.haveAllSubmittedFormsBeenVerified({ application })) {
+    return false
+  }
+
+  const { forms=[], verificationsIssued=[] } = application
+  const info = verificationsIssued.map(({ item, verification }) => {
+    return {
+      form: item,
+      verifier: verification._verifiedBy
+    }
+  })
+
+  const verifierPermalinks = uniqueStrings(info.map(({ verifier }) => verifier))
+  const verifiers = yield verifierPermalinks.map(_permalink => {
+    return this.bot.db.get({
+      [TYPE]: IDENTITY,
+      _permalink
+    })
+  })
+
+  const employees = verifiers.filter(user => this.isEmployee(user))
+  return forms.every(form => {
+    return verificationsIssued
+      .filter(({ item }) => item.id === form.id)
+      .find(({ _verifiedBy }) => employees.find(user => user.id === _verifiedBy))
+  })
+})
 
 function removeEmployeeRole (user) {
   const idx = (user.roles || []).find(role => role.id === 'employee')

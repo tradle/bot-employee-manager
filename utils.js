@@ -28,9 +28,19 @@ module.exports = {
   shallowClone,
   shallowExtend,
   debug,
-  getCustomMessageProperties
+  getCustomMessageProperties,
+  uniqueStrings
 }
 
 function getCustomMessageProperties (message) {
   return omit(omitVirtual(message), BUILT_IN_MESSAGE_PROPS)
+}
+
+function uniqueStrings (arr) {
+  const map = {}
+  for (const str of arr) {
+    map[str] = true
+  }
+
+  return Object.keys(map)
 }
