@@ -651,7 +651,7 @@ proto._didSend = co(function* (input, sentObject) {
   const { originalSender } = other
   if (originalSender === relationshipManager) return
 
-  debug('forwarding')
+  debug(`cc'ing`)
   debugObj({
     type: sentObject[TYPE],
     to: 'rm',
