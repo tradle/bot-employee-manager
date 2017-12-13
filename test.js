@@ -84,6 +84,27 @@ test('basic', co(function* (t) {
     sendQueue: []
   })
 
+  t.equal(sendSpy.callCount, 0)
+  manager.handleMessages()
+
+  yield receive({
+    user: relationshipManager,
+    // application,
+    message: {
+      context: application.context,
+      object: {
+        [TYPE]: 'tradle.AssignRelationshipManager',
+        [SIG]: newSig(),
+        employee: relationshipManager.identity,
+        application: {
+          id: applicationId
+        }
+      }
+    },
+    sendQueue: []
+  })
+
+  t.equal(sendSpy.callCount, 3)
   t.equal(sendSpy.getCall(0).args[0].object[TYPE], 'tradle.Verification')
   t.equal(sendSpy.getCall(1).args[0].object[TYPE], 'tradle.Introduction')
   t.equal(sendSpy.getCall(2).args[0].object[TYPE], 'tradle.Introduction')
@@ -163,6 +184,28 @@ test('basic', co(function* (t) {
   t.equal(fwdHeyHo.other.originalSender, relationshipManager.id)
   t.equal(reSignSpy.callCount, 1)
 
+  sendSpy.restore()
+  sendSpy = sinon.spy(api, 'send')
+  manager.handleMessages(false)
+
+  yield receive({
+    user: relationshipManager,
+    // application,
+    message: {
+      context: application.context,
+      object: {
+        [TYPE]: 'tradle.AssignRelationshipManager',
+        [SIG]: newSig(),
+        employee: relationshipManager.identity,
+        application: {
+          id: applicationId
+        }
+      }
+    },
+    sendQueue: []
+  })
+
+  t.equal(sendSpy.callCount, 0)
   t.end()
 
   // bot.send({
@@ -330,7 +373,7 @@ function newMock ({ users, application }) {
   // })
 
   productsAPI.install(bot)
-  const manager = manageMonkeys({ productsAPI })
+  const manager = manageMonkeys({ productsAPI, handleMessages: false })
   return {
     bot,
     receive,

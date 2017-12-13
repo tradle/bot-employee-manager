@@ -35,7 +35,8 @@ function EmployeeManager ({
   approveAll,
   wrapForEmployee,
   shouldForwardFromEmployee=alwaysTrue,
-  shouldForwardToEmployee=alwaysTrue
+  shouldForwardToEmployee=alwaysTrue,
+  handleMessages=true
 }) {
   bindAll(this)
 
@@ -57,29 +58,48 @@ function EmployeeManager ({
 
   this.models = productsAPI.models.all
   this.privateModels = productsAPI.models.private
-  productsAPI.plugins.use({
-    onFormsCollected: this._onFormsCollected,
-    willSend: this._willSend,
-    didSend: this._didSend
-    // willSign: setEntityRole
-  })
 
-  // prepend
-  productsAPI.plugins.use({
-    onmessage: this._onmessage,
-    deduceApplication: this._deduceApplication
-  }, true)
-
-  productsAPI.plugins.use({
-    didApproveApplication: ({ req }, certificate) => {
-      if (certificate[TYPE] == EMPLOYEE_PASS) {
-        this._addEmployeeRole(req.user)
-      }
-    }
-  })
+  this._pluginSubscriptions = []
+  this._handlingMessages = false
+  if (handleMessages) this.handleMessages()
 }
 
 const proto = EmployeeManager.prototype
+
+proto.handleMessages = function handleMessages (handle=true) {
+  if (this._handlingMessages === handle) return
+
+  this._handlingMessages = handle
+  const { productsAPI } = this
+
+  if (handle === false) {
+    this._pluginSubscriptions.forEach(unsubscribe => unsubscribe())
+    return
+  }
+
+  this._pluginSubscriptions = [
+    productsAPI.plugins.use({
+      onFormsCollected: this._onFormsCollected,
+      willSend: this._willSend,
+      didSend: this._didSend
+      // willSign: setEntityRole
+    }),
+
+    // prepend
+    productsAPI.plugins.use({
+      onmessage: this._onmessage,
+      deduceApplication: this._deduceApplication
+    }, true),
+
+    productsAPI.plugins.use({
+      didApproveApplication: ({ req }, certificate) => {
+        if (certificate[TYPE] == EMPLOYEE_PASS) {
+          this._addEmployeeRole(req.user)
+        }
+      }
+    })
+  ]
+}
 
 proto._deduceApplication = function _deduceApplication (req) {
   const { message } = req
