@@ -22,6 +22,7 @@ const IDENTITY = 'tradle.Identity'
 const INTRODUCTION = 'tradle.Introduction'
 const SHARE_REQUEST = 'tradle.ShareRequest'
 const VERIFICATION = 'tradle.Verification'
+const APPLICATION = 'tradle.Application'
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 const alwaysTrue = () => true
@@ -101,13 +102,32 @@ proto.handleMessages = function handleMessages (handle=true) {
   ]
 }
 
-proto._deduceApplication = function _deduceApplication (req) {
-  const { message } = req
-  if (message && message.forward) {
+proto._deduceApplication = co(function* (req) {
+  const { user, message={} } = req
+  if (!this.isEmployee(user)) return
+
+  const { context, forward, object } = message
+  const isVerification = object[TYPE] === VERIFICATION
+  if (forward && !isVerification) {
     // ignore
     return false
   }
-}
+
+  if (!(context && isVerification)) return
+
+  try {
+    return yield this.bot.db.findOne({
+      filter: {
+        EQ: {
+          [TYPE]: APPLICATION,
+          context: req.context
+        }
+      }
+    })
+  } catch (err) {
+    debug('failed to get application by context', err.stack)
+  }
+})
 
 /**
  * Attempt to detect the employee to forward the message to based on the "context"
@@ -358,15 +378,29 @@ proto._onmessage = co(function* (req) {
   const type = object[TYPE]
   // forward from employee to customer
   if (this.isEmployee(user)) {
-    if (type === APPROVED || type === DENIAL) {
-      yield this.approveOrDeny({
-        req,
-        approvedBy: user,
-        application,
-        judgment: object
-      })
+    if (application) {
+      if (type === APPROVED || type === DENIAL) {
+        yield this.approveOrDeny({
+          req,
+          approvedBy: user,
+          application,
+          judgment: object
+        })
 
-      return
+        return
+      }
+
+      if (type === VERIFICATION) {
+        // defer to bot-products
+        const applicantPermalink = parseStub(application.applicant).permalink
+        const applicant = yield this.bot.users.get(applicantPermalink)
+        yield this.productsAPI.addVerification({
+          user: applicant,
+          application,
+          verification: object,
+          imported: false
+        })
+      }
     }
 
     // assign relationship manager

@@ -252,6 +252,7 @@ function fakeBot ({ users }) {
   const bot = {
     db: {
       find: () => Promise.resolve({ items: [] }),
+      findOne: () => Promise.resolve({}),
       put: obj => Promise.resolve(),
       del: obj => Promise.resolve()
     },
