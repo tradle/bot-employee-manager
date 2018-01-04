@@ -338,10 +338,8 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) 
   // should be able to perform these actions
   const approve = judgment[TYPE] === APPROVED
 
-  let willSave
   if (!application) {
     application = yield productsAPI.getApplicationByStub(judgment.application)
-    willSave = true
   }
 
   const applicantPermalink = parseStub(application.applicant).permalink
@@ -358,12 +356,10 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) 
     yield productsAPI.denyApplication(opts)
   }
 
-  const saveApplication = willSave
-    ? productsAPI.saveNewVersionOfApplication({
-        user: applicant,
-        application
-      })
-    : RESOLVED
+  const saveApplication = productsAPI.saveNewVersionOfApplication({
+    user: applicant,
+    application
+  })
 
   const saveUser = bot.users.merge(applicant)
   yield [saveApplication, saveUser]
@@ -399,6 +395,11 @@ proto._onmessage = co(function* (req) {
           application,
           verification: object,
           imported: false
+        })
+
+        yield this.productsAPI.saveNewVersionOfApplication({
+          user: applicant,
+          application
         })
       }
     }
