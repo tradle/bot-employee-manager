@@ -16,13 +16,20 @@ const PACKAGE_NAME = require('./package').name
 const EMPLOYEE_ONBOARDING = 'tradle.EmployeeOnboarding'
 const EMPLOYEE_PASS = 'tradle.MyEmployeeOnboarding'
 const ASSIGN_RM = 'tradle.AssignRelationshipManager'
-const APPROVED = 'tradle.ApplicationApproval'
+const APPROVAL = 'tradle.ApplicationApproval'
 const DENIAL = 'tradle.ApplicationDenial'
 const IDENTITY = 'tradle.Identity'
 const INTRODUCTION = 'tradle.Introduction'
 const SHARE_REQUEST = 'tradle.ShareRequest'
 const VERIFICATION = 'tradle.Verification'
 const APPLICATION = 'tradle.Application'
+const ACTION_TYPES = [
+  VERIFICATION,
+  APPROVAL,
+  DENIAL
+]
+
+const isActionType = type => ACTION_TYPES.includes(type)
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 const alwaysTrue = () => true
@@ -107,13 +114,13 @@ proto._deduceApplication = co(function* (req) {
   if (!this.isEmployee(user)) return
 
   const { context, forward, object } = message
-  const isVerification = object[TYPE] === VERIFICATION
-  if (forward && !isVerification) {
+  const isAction = isActionType(object[TYPE])
+  if (forward && !isAction) {
     // ignore
     return false
   }
 
-  if (!(context && isVerification)) return
+  if (!(context && isAction)) return
 
   try {
     return yield this.bot.db.findOne({
@@ -336,7 +343,7 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) 
   const { bot, productsAPI } = this
   // TODO: maybe only relationship manager or someone with the right role
   // should be able to perform these actions
-  const approve = judgment[TYPE] === APPROVED
+  const approve = judgment[TYPE] === APPROVAL
 
   if (!application) {
     application = yield productsAPI.getApplicationByStub(judgment.application)
@@ -375,7 +382,7 @@ proto._onmessage = co(function* (req) {
   // forward from employee to customer
   if (this.isEmployee(user)) {
     if (application) {
-      if (type === APPROVED || type === DENIAL) {
+      if (type === APPROVAL || type === DENIAL) {
         yield this.approveOrDeny({
           req,
           approvedBy: user,
