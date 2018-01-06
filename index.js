@@ -1,12 +1,12 @@
 const co = require('co').wrap
+const _ = require('lodash')
 const { TYPE } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
 const { parseId, parseStub } = require('@tradle/validate-resource').utils
+const baseModels = require('@tradle/models').models
 const {
   debug,
   getCustomMessageProperties,
-  pick,
-  shallowClone,
   bindAll,
   uniqueStrings
 } = require('./utils')
@@ -24,11 +24,14 @@ const SHARE_REQUEST = 'tradle.ShareRequest'
 const VERIFICATION = 'tradle.Verification'
 const APPLICATION = 'tradle.Application'
 const ACTION_TYPES = [
+  ASSIGN_RM,
   VERIFICATION,
   APPROVAL,
   DENIAL
 ]
 
+const assignRMModel = baseModels[ASSIGN_RM]
+const roleModel = require('@tradle/models-products-bot')['tradle.products.Role']
 const isActionType = type => ACTION_TYPES.includes(type)
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
@@ -39,6 +42,7 @@ exports = module.exports = function createEmployeeManager (opts) {
 }
 
 function EmployeeManager ({
+  bot,
   productsAPI,
   approveAll,
   wrapForEmployee,
@@ -56,16 +60,11 @@ function EmployeeManager ({
   this._shouldForwardToEmployee = shouldForwardToEmployee
   this._shouldForwardFromEmployee = shouldForwardFromEmployee
   // const assignRMModel = createAssignRMModel({ productsAPI })
-  const assignRMModel = productsAPI.models.all[ASSIGN_RM]
 
-  this.bot = productsAPI.bot
-  productsAPI.on('bot', botInstance => this.bot = botInstance)
+  this.bot = bot
   productsAPI.addProducts({
     products: ['tradle.EmployeeOnboarding']
   })
-
-  this.models = productsAPI.models.all
-  this.privateModels = productsAPI.models.private
 
   this._pluginSubscriptions = []
   this._handlingMessages = false
@@ -114,7 +113,12 @@ proto._deduceApplication = co(function* (req) {
   if (!this.isEmployee(user)) return
 
   const { context, forward, object } = message
-  const isAction = isActionType(object[TYPE])
+  const type = object[TYPE]
+  if (type === ASSIGN_RM) {
+    return yield this.productsAPI.getApplicationByStub(object.application)
+  }
+
+  const isAction = isActionType(type)
   if (forward && !isAction) {
     // ignore
     return false
@@ -177,7 +181,7 @@ proto._maybeForwardByContext = co(function* ({ req }) {
 })
 
 proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
-  // if (this.models['tradle.Message'].isInterface) {
+  // if (models['tradle.Message'].isInterface) {
     const results = yield this.bot.messages.inbox.find({
       IndexName: 'context',
       KeyConditionExpression: '#context = :context',
@@ -321,21 +325,19 @@ proto.reSignAndForward = co(function* ({ req, to, myIdentity }) {
 
 proto._maybeAssignRM = co(function* ({ req, assignment }) {
   const { bot, productsAPI } = this
-  const { user, application } = req
+  const { user, application, applicant } = req
   if (!this.isEmployee(user)) {
     debug(`refusing to assign relationship manager as sender "${user.id}" is not an employee`)
     return
   }
 
   const relationshipManager = parseStub(assignment.employee).permalink
-  const applicationResource = yield productsAPI.getApplicationByStub(assignment.application)
-  const applicant = parseStub(applicationResource.applicant).permalink
   yield this.assignRelationshipManager({
     req,
     applicant,
     assignment,
     relationshipManager: relationshipManager === user.id ? user : relationshipManager,
-    application: applicationResource
+    application
   })
 })
 
@@ -362,20 +364,12 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) 
   } else {
     yield productsAPI.denyApplication(opts)
   }
-
-  const saveApplication = productsAPI.saveNewVersionOfApplication({
-    user: applicant,
-    application
-  })
-
-  const saveUser = bot.users.merge(applicant)
-  yield [saveApplication, saveUser]
 })
 
 proto._onmessage = co(function* (req) {
-  const { user, application, message } = req
+  const { user, application, applicant, message } = req
   debug('processing message, custom props:',
-    JSON.stringify(pick(message, ['originalSender', 'forward'])))
+    JSON.stringify(_.pick(message, ['originalSender', 'forward'])))
 
   const { object, forward } = message
   const type = object[TYPE]
@@ -394,20 +388,8 @@ proto._onmessage = co(function* (req) {
       }
 
       if (type === VERIFICATION) {
-        // defer to bot-products
-        const applicantPermalink = parseStub(application.applicant).permalink
-        const applicant = yield this.bot.users.get(applicantPermalink)
-        this.productsAPI.addVerification({
-          user: applicant,
-          application,
-          verification: object,
-          imported: false
-        })
-
-        yield this.productsAPI.saveNewVersionOfApplication({
-          user: applicant,
-          application
-        })
+        // defer to bot-products to import
+        return
       }
     }
 
@@ -555,16 +537,11 @@ proto.assignRelationshipManager = co(function* ({
     context
   })
 
-  const promiseSaveApplication = productsAPI.saveNewVersionOfApplication({
-    user: applicant,
-    application
-  })
-
   const promiseSendVerification = productsAPI.send({
     req,
     to: relationshipManager,
     object: buildResource({
-        models: this.models,
+        models: baseModels,
         model: VERIFICATION
       })
       .set({
@@ -577,7 +554,6 @@ proto.assignRelationshipManager = co(function* ({
 
   yield [
     promiseIntro,
-    promiseSaveApplication,
     promiseSendVerification
   ]
 })
@@ -701,6 +677,7 @@ proto._didSend = co(function* (input, sentObject) {
   let { req, to, other={} } = input
   const { user, message, application } = req
   if (!application) return
+  if (sentObject[TYPE] === INTRODUCTION) return
 
   let { relationshipManager } = application
   if (!relationshipManager) return
@@ -708,10 +685,10 @@ proto._didSend = co(function* (input, sentObject) {
   relationshipManager = parseStub(relationshipManager).permalink
   // avoid infinite loop of sending to the same person
   // and then forwarding, and then forwarding, and then forwarding...
-  if (to === relationshipManager) return
+  if (other.originalSender === relationshipManager) return
 
-  const { originalSender } = other
-  if (originalSender === relationshipManager) return
+  const originalRecipient = to.id || to
+  if (originalRecipient === relationshipManager) return
 
   debug(`cc'ing`)
   debugObj({
@@ -719,11 +696,11 @@ proto._didSend = co(function* (input, sentObject) {
     to: 'rm',
     author: 'this bot',
     recipient: relationshipManager,
-    originalRecipient: req.user.id
+    originalRecipient
   })
 
-  other = shallowClone(other)
-  other.originalRecipient = to.id || to
+  other = _.clone(other)
+  other.originalRecipient = originalRecipient
   // nothing to unwrap here, this is an original from our bot
   yield this.forwardToEmployee({
     req,
@@ -735,7 +712,7 @@ proto._didSend = co(function* (input, sentObject) {
 
 proto._addEmployeeRole = function _addEmployeeRole (user) {
   const employeeRole = buildResource.enumValue({
-    model: this.privateModels.role,
+    model: roleModel,
     value: 'employee'
   })
 
@@ -753,7 +730,7 @@ proto._createIntroductionFor = function _createIntroductionFor ({ user, identity
   }
 
   return buildResource({
-    models: this.models,
+    models: baseModels,
     model: INTRODUCTION,
     resource: intro
   })
@@ -762,7 +739,7 @@ proto._createIntroductionFor = function _createIntroductionFor ({ user, identity
 
 proto.isEmployee = function isEmployee (user) {
   const { id } = buildResource.enumValue({
-    model: this.privateModels.role,
+    model: roleModel,
     value: 'employee'
   })
 
@@ -774,8 +751,8 @@ proto.haveAllSubmittedFormsBeenManuallyApproved = co(function* ({ application })
     return false
   }
 
-  const { forms=[], verificationsIssued=[] } = application
-  const info = verificationsIssued.map(({ item, verification }) => {
+  const { forms=[], verificationsImported=[] } = application
+  const info = verificationsImported.map(({ item, verification }) => {
     return {
       form: item,
       verifier: verification._verifiedBy
@@ -792,7 +769,7 @@ proto.haveAllSubmittedFormsBeenManuallyApproved = co(function* ({ application })
 
   const employees = verifiers.filter(user => this.isEmployee(user))
   return forms.every(form => {
-    return verificationsIssued
+    return verificationsImported
       .filter(({ item }) => item.id === form.id)
       .find(({ _verifiedBy }) => employees.find(user => user.id === _verifiedBy))
   })

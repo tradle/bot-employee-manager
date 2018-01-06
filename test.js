@@ -5,17 +5,23 @@ const { EventEmitter } = require('events')
 const co = require('co').wrap
 const test = require('tape')
 const sinon = require('sinon')
-const clone = require('xtend')
-const extend = require('xtend/mutable')
+const _ = require('lodash')
 const createProductsStrategy = require('@tradle/bot-products')
 const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
+const fakeResource = require('@tradle/build-resource/fake')
 const baseModels = require('@tradle/merge-models')()
   .add(require('@tradle/models').models)
   .add(require('@tradle/custom-models'))
+  .add(require('@tradle/models-products-bot'))
   .get()
 
 const manageMonkeys = require('./')
+const roleModel = baseModels['tradle.products.Role']
+const employeeRole = buildResource.enumValue({
+  model: roleModel,
+  value: 'employee'
+})
 
 // function createBot (opts) {
 //   opts.inMemory = true
@@ -28,7 +34,7 @@ test('basic', co(function* (t) {
     identity: {
       id: 'tradle.Identity_bill_123'
     },
-    roles: [{ id: 'test.Role_employee' }]
+    roles: [employeeRole]
   }
 
   const customerIdentityStub = {
@@ -64,6 +70,7 @@ test('basic', co(function* (t) {
     application
   })
 
+  const { send } = api
   let sendSpy = sinon.spy(api, 'send')
   api.emit('bot', bot)
 
@@ -104,6 +111,7 @@ test('basic', co(function* (t) {
     sendQueue: []
   })
 
+  // console.log(sendSpy.getCalls().map(call => JSON.stringify(call.args[0].object)))
   t.equal(sendSpy.callCount, 3)
   t.equal(sendSpy.getCall(0).args[0].object[TYPE], 'tradle.Verification')
   t.equal(sendSpy.getCall(1).args[0].object[TYPE], 'tradle.Introduction')
@@ -249,6 +257,14 @@ test('basic', co(function* (t) {
 
 function fakeBot ({ users }) {
   const handlers = []
+  const identities = _.transform(users, (result, user) => {
+    result[user.id] = fakeResource({
+      models: baseModels,
+      model: baseModels['tradle.Identity'],
+      signed: true
+    })
+  }, {})
+
   const bot = {
     db: {
       find: () => Promise.resolve({ items: [] }),
@@ -257,7 +273,7 @@ function fakeBot ({ users }) {
       del: obj => Promise.resolve()
     },
     sign: object => {
-      object = clone(object)
+      object = _.clone(object)
       object[SIG] = crypto.randomBytes(128).toString('hex')
       return Promise.resolve(object)
     },
@@ -273,13 +289,11 @@ function fakeBot ({ users }) {
     }),
     getMyIdentity: () => Promise.resolve({ _permalink: 'zzz' }),
     addressBook: {
-      byPermalink: permalink => {
-        if (users.some(({ id }) => id === permalink)) {
-          return {}
-        }
-
+      byPermalink: co(function* (permalink) {
+        const identity = identities[permalink]
+        if (identity) return identity
         throw new Error('identity not found')
-      }
+      })
     },
     users: {
       get: co(function* (permalink) {
@@ -290,15 +304,24 @@ function fakeBot ({ users }) {
 
         return user
       }),
-      merge: () => {
-        throw new Error('users.merge is not mocked')
-      }
+      save: co(function* (user) {
+        users[user.id] = user
+      }),
+      merge: co(function* (user) {
+        _.extend(users[user.id], user)
+      })
     },
     presignEmbeddedMediaLinks: object => Promise.resolve(object),
     onmessage: handler => handlers.push(handler),
     send: co(function* () {
-
-    })
+    }),
+    messsages: {
+      inbox: {
+        find: () => {
+          return Promise.resolve([])
+        }
+      }
+    }
   }
 
   const receive = req => {
@@ -324,7 +347,7 @@ function newMock ({ users, application }) {
       all: baseModels,
       private: {
         role: {
-          id: 'test.Role',
+          id: roleModel.id,
           enum: [
             { id: 'employee' }
           ]
@@ -374,7 +397,7 @@ function newMock ({ users, application }) {
   // })
 
   productsAPI.install(bot)
-  const manager = manageMonkeys({ productsAPI, handleMessages: false })
+  const manager = manageMonkeys({ bot, productsAPI, handleMessages: false })
   return {
     bot,
     receive,

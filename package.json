@@ -7,14 +7,16 @@
   "author": "Mark Vayngrib <mark@tradle.io>",
   "license": "MIT",
   "peerDependencies": {
-    "@tradle/models": "*"
+    "@tradle/models": "*",
+    "@tradle/models-products-bot": "*"
   },
   "devDependencies": {
     "@tradle/bot-products": "github:tradle/bot-products#modeled",
     "@tradle/custom-models": "github:tradle/custom-models",
     "@tradle/engine": "^4.10.3",
-    "@tradle/merge-models": "^2.0.0",
+    "@tradle/merge-models": "^2.1.0",
     "@tradle/models": "github:tradle/models",
+    "@tradle/models-products-bot": "github:tradle/models-products-bot",
     "bluebird": "^3.5.0",
     "eslint": "^3.17.1",
     "husky": "^0.13.2",
@@ -27,15 +29,13 @@
     "precommit": "yarn lint && yarn test"
   },
   "dependencies": {
-    "@tradle/build-resource": "^2.7.0",
+    "@tradle/build-resource": "^2.14.0",
     "@tradle/constants": "^2.1.0",
-    "@tradle/validate-model": "^4.1.0",
-    "@tradle/validate-resource": "^2.8.0",
+    "@tradle/validate-model": "^5.0.0",
+    "@tradle/validate-resource": "^2.16.0",
     "bindall": "^2.0.1",
     "co": "^4.6.0",
     "debug": "^2.6.1",
-    "object.omit": "^3.0.0",
-    "object.pick": "^1.3.0",
-    "xtend": "^4.0.1"
+    "lodash": "^4.17.4"
   }
 }
