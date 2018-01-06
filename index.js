@@ -397,7 +397,7 @@ proto._onmessage = co(function* (req) {
         // defer to bot-products
         const applicantPermalink = parseStub(application.applicant).permalink
         const applicant = yield this.bot.users.get(applicantPermalink)
-        yield this.productsAPI.addVerification({
+        this.productsAPI.addVerification({
           user: applicant,
           application,
           verification: object,
