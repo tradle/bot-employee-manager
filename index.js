@@ -11,7 +11,6 @@ const {
   uniqueStrings
 } = require('./utils')
 
-const debugObj = obj => debug(JSON.stringify(obj, null, 2))
 const PACKAGE_NAME = require('./package').name
 const EMPLOYEE_ONBOARDING = 'tradle.EmployeeOnboarding'
 const EMPLOYEE_PASS = 'tradle.MyEmployeeOnboarding'
@@ -36,6 +35,13 @@ const isActionType = type => ACTION_TYPES.includes(type)
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 const alwaysTrue = () => true
+const defaultLogger = {
+  debug,
+  log: debug,
+  error: debug,
+  warn: debug,
+  info: debug
+}
 
 exports = module.exports = function createEmployeeManager (opts) {
   return new EmployeeManager(opts)
@@ -46,6 +52,7 @@ function EmployeeManager ({
   productsAPI,
   approveAll,
   wrapForEmployee,
+  logger,
   shouldForwardFromEmployee=alwaysTrue,
   shouldForwardToEmployee=alwaysTrue,
   handleMessages=true
@@ -55,6 +62,7 @@ function EmployeeManager ({
   // assign relationship manager to customers
   // forward messages between customer and relationship manager
   this.productsAPI = productsAPI
+  this.logger = logger || defaultLogger
   this._approveAll = approveAll
   this._wrapForEmployee = wrapForEmployee
   this._shouldForwardToEmployee = shouldForwardToEmployee
@@ -136,7 +144,7 @@ proto._deduceApplication = co(function* (req) {
       }
     })
   } catch (err) {
-    debug('failed to get application by context', err.stack)
+    this.logger.debug('failed to get application by context', err.stack)
   }
 })
 
@@ -154,18 +162,17 @@ proto._maybeForwardByContext = co(function* ({ req }) {
   try {
     last = yield this._getLastInboundMessageByContext({ user, context })
   } catch (err) {
-    debug('failed to determine forward target by context', err.message)
+    this.logger.debug('failed to determine forward target by context', err.message)
     return
   }
 
-  debug(`found forward target candidate ${JSON.stringify(last)} by context ${context}`)
+  this.logger.debug(`found forward target candidate ${JSON.stringify(last)} by context ${context}`)
   const { _author } = last
   const candidate = yield bot.users.get(_author)
   if (!this.isEmployee(candidate)) return
 
   const type = req.message.object[TYPE]
-  debug('forwarding')
-  debugObj({
+  this.logger.debug('forwarding', {
     to: 'guessed employee based on context',
     type,
     context,
@@ -232,7 +239,7 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   if (this.isEmployee(user)) {
     const myIdentity = yield this.bot.getMyIdentity()
     if (myIdentity._permalink === forward) {
-      debug(`not forwarding ${type} ${object._link} to self`)
+      this.logger.debug(`not forwarding ${type} ${object._link} to self`)
       return
     }
 
@@ -241,12 +248,11 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
     )
 
     if (!shouldForward) {
-      debug(`not forwarding ${type} from employee ${user.id} to ${forward}`)
+      this.logger.debug(`not forwarding ${type} from employee ${user.id} to ${forward}`)
       return
     }
 
-    debug('forwarding')
-    debugObj({
+    this.logger.debug('forwarding', {
       to: 'customer (specified by employee in message.forward)',
       type: type,
       context: message.context,
@@ -262,12 +268,12 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   try {
     recipient = yield bot.users.get(forward)
   } catch (err) {
-    debug(`final recipient ${forward} specified in "forward" was not found`)
+    this.logger.debug(`final recipient ${forward} specified in "forward" was not found`)
     return
   }
 
   if (!this.isEmployee(recipient)) {
-    debug(`refusing to forward: neither sender "${user.id}" nor recipient "${forward}" is an employee`)
+    this.logger.debug(`refusing to forward: neither sender "${user.id}" nor recipient "${forward}" is an employee`)
     return
   }
 
@@ -276,12 +282,11 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   )
 
   if (!shouldForward) {
-    debug(`not forwarding ${type} from ${user.id} to employee ${forward}`)
+    this.logger.debug(`not forwarding ${type} from ${user.id} to employee ${forward}`)
     return
   }
 
-  debug('forwarding')
-  debugObj({
+  this.logger.debug('forwarding', {
     to: 'employee (specified in message.forward)',
     type: type,
     context: message.context,
@@ -299,9 +304,9 @@ proto.reSignAndForward = co(function* ({ req, to, myIdentity }) {
   let { object } = message
   const type = object[TYPE]
   if (myIdentity._permalink == object._author) {
-    debug('not re-signing, as original is also signed by me')
+    this.logger.debug('not re-signing, as original is also signed by me')
   } else {
-    debug(`re-signing ${type} before forwarding to ${to}`)
+    this.logger.debug(`re-signing ${type} before forwarding to ${to}`)
     const original = object
     object = yield this.bot.reSign(object)
     buildResource.setVirtual(object, {
@@ -327,7 +332,7 @@ proto._maybeAssignRM = co(function* ({ req, assignment }) {
   const { bot, productsAPI } = this
   const { user, application, applicant } = req
   if (!this.isEmployee(user)) {
-    debug(`refusing to assign relationship manager as sender "${user.id}" is not an employee`)
+    this.logger.debug(`refusing to assign relationship manager as sender "${user.id}" is not an employee`)
     return
   }
 
@@ -353,7 +358,7 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) 
 
   const applicantPermalink = parseStub(application.applicant).permalink
   if (applicantPermalink === approvedBy.id) {
-    debug('applicant cannot approve/deny their own application')
+    this.logger.debug('applicant cannot approve/deny their own application')
     return
   }
 
@@ -368,8 +373,10 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) 
 
 proto._onmessage = co(function* (req) {
   const { user, application, applicant, message } = req
-  debug('processing message, custom props:',
-    JSON.stringify(_.pick(message, ['originalSender', 'forward'])))
+  this.logger.debug(
+    'processing message, custom props:',
+    _.pick(message, ['originalSender', 'forward'])
+  )
 
   const { object, forward } = message
   const type = object[TYPE]
@@ -408,7 +415,7 @@ proto._onmessage = co(function* (req) {
   if (forward) {
     yield this._maybeForwardToOrFromEmployee({ req, forward })
     // prevent default processing
-    debug('preventing further processing of inbound message')
+    this.logger.debug('preventing further processing of inbound message')
     return false
   }
 
@@ -421,8 +428,7 @@ proto._onmessage = co(function* (req) {
   const { relationshipManager } = application
   if (relationshipManager) {
     const rmPermalink = parseStub(relationshipManager).permalink
-    debug('forwarding')
-    debugObj({
+    this.logger.debug('forwarding', {
       to: 'rm',
       type,
       context: message.context,
@@ -439,7 +445,7 @@ proto._onmessage = co(function* (req) {
 
 proto._onShareRequest = function ({ req }) {
   const { user, object, message } = req
-  debug(`processing ${SHARE_REQUEST}`, JSON.stringify(object, null, 2))
+  this.logger.debug(`processing ${SHARE_REQUEST}`, object)
   const other = {
     originalSender: user.id
   }
@@ -449,7 +455,11 @@ proto._onShareRequest = function ({ req }) {
   return Promise.all(object.links.map(link => {
     return Promise.all(object.with.map(identityStub => {
       const { permalink } = parseStub(identityStub)
-      debug(`sharing ${link} with ${permalink}`)
+      this.logger.debug(`sharing`, {
+        link,
+        with: permalink
+      })
+
       return this.productsAPI.send({
         req,
         to: permalink,
@@ -473,7 +483,7 @@ proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, o
   }
 
   if (!other.context && message && message.context) {
-    debug(`propagating context ${message.context} on forwarded message`)
+    this.logger.debug(`propagating context ${message.context} on forwarded message`)
     other.context = message.context
   }
 
@@ -526,9 +536,9 @@ proto.assignRelationshipManager = co(function* ({
       : Promise.resolve(userOrId)
   })
 
-  debug(`assigning relationship manager ${rmID} to user ${applicant.id}`)
+  this.logger.debug(`assigning relationship manager ${rmID} to user ${applicant.id}`)
   if (application.relationshipManager) {
-    debug(`previous relationship manager: ${parseStub(application.relationshipManager).permalink}`)
+    this.logger.debug(`previous relationship manager: ${parseStub(application.relationshipManager).permalink}`)
   }
 
   application.relationshipManager = relationshipManager.identity
@@ -591,7 +601,7 @@ proto._onFormsCollected = co(function* (req) {
 proto.hire = function hire ({ user, application }) {
   const { bot, productsAPI } = this
   if (this.isEmployee(user)) {
-    debug(`user ${user.id} is already an employee`)
+    this.logger.debug(`user ${user.id} is already an employee`)
     return
   }
 
@@ -666,7 +676,7 @@ proto._willSend = function _willSend (opts) {
   const { message={} } = req
   const { originalSender } = message
   if (originalSender) {
-    debug('setting "forward" based on original sender')
+    this.logger.debug('setting "forward" based on original sender')
     other.forward = originalSender
     // in case it was null
     opts.other = other
@@ -694,8 +704,7 @@ proto._didSend = co(function* (input, sentObject) {
   const originalRecipient = to.id || to
   if (originalRecipient === relationshipManager) return
 
-  debug(`cc'ing`)
-  debugObj({
+  this.logger.debug(`cc'ing`, {
     type: sentObject[TYPE],
     to: 'rm',
     author: 'this bot',
