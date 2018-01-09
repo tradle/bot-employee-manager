@@ -342,6 +342,7 @@ function fakeBot ({ users }) {
 function newMock ({ users, application }) {
   const { bot, receive } = fakeBot({ users })
   const productsAPI = createProductsStrategy({
+    bot,
     namespace: 'test',
     models: {
       all: baseModels,
@@ -396,7 +397,7 @@ function newMock ({ users, application }) {
   //   })
   // })
 
-  productsAPI.install(bot)
+  bot.onmessage(productsAPI.onmessage)
   const manager = manageMonkeys({ bot, productsAPI, handleMessages: false })
   return {
     bot,

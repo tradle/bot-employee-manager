@@ -99,9 +99,9 @@ proto.handleMessages = function handleMessages (handle=true) {
     }, true),
 
     productsAPI.plugins.use({
-      didApproveApplication: ({ req }, certificate) => {
+      didApproveApplication: ({ user, application }, certificate) => {
         if (certificate[TYPE] == EMPLOYEE_PASS) {
-          this._addEmployeeRole(req.user)
+          this._addEmployeeRole(user)
         }
       }
     })
@@ -358,7 +358,7 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) 
   }
 
   const applicant = yield bot.users.get(applicantPermalink)
-  const opts = { req, user: applicant, application }
+  const opts = { req, user: applicant, application, approvedBy }
   if (approve) {
     yield productsAPI.approveApplication(opts)
   } else {
@@ -460,20 +460,24 @@ proto._onShareRequest = function ({ req }) {
   }))
 }
 
-proto.forwardToEmployee = function forwardToEmployee ({ req, object, to, other={} }) {
+proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, other={} }) {
   // const other = getCustomMessageProperties(message)
   // delete other.forward
-  const { user, message } = req
-  if (!object) {
+  let message = req && req.message
+  if (!from && req) {
+    from = req.user
+  }
+
+  if (!object && message) {
     object = this._wrapForEmployee ? message : message.object
   }
 
-  if (!other.context && message.context) {
+  if (!other.context && message && message.context) {
     debug(`propagating context ${message.context} on forwarded message`)
     other.context = message.context
   }
 
-  other.originalSender = user.id
+  other.originalSender = from.id
   return this.productsAPI.send({ req, to, object, other })
 }
 
@@ -584,9 +588,8 @@ proto._onFormsCollected = co(function* (req) {
 
 // const defaultOnFormsCollected = productsAPI.removeDefaultHandler('onFormsCollected')
 
-proto.hire = function hire (req) {
+proto.hire = function hire ({ user, application }) {
   const { bot, productsAPI } = this
-  let { user, application } = req
   if (this.isEmployee(user)) {
     debug(`user ${user.id} is already an employee`)
     return
@@ -603,12 +606,11 @@ proto.hire = function hire (req) {
     }
   }
 
-  return productsAPI.approveApplication({ req })
+  return productsAPI.approveApplication({ user, application })
 }
 
-proto.fire = function fire (req) {
+proto.fire = function fire ({ user, application }) {
   const { bot, productsAPI } = this
-  let { user, application } = req
   if (!this.isEmployee(user)) {
     throw new Error(`user ${user.id} is not an employee`)
   }
@@ -641,8 +643,8 @@ proto.mutuallyIntroduce = co(function* ({ req, a, b, context }) {
   ]
 
   const [userA, userB] = yield [getUserA, getUserB]
-  const introduceA = this._createIntroductionFor({ req, user: a, identity: aIdentity })
-  const introduceB = this._createIntroductionFor({ req, user: b, identity: bIdentity })
+  const introduceA = this._createIntroductionFor({ user: a, identity: aIdentity })
+  const introduceB = this._createIntroductionFor({ user: b, identity: bIdentity })
   yield [
     productsAPI.send({
       req,
@@ -674,13 +676,15 @@ proto._willSend = function _willSend (opts) {
 // forward any messages sent by the bot
 // to the relationship manager
 proto._didSend = co(function* (input, sentObject) {
-  let { req, to, other={} } = input
-  const { user, message, application } = req
-  if (!application) return
   if (sentObject[TYPE] === INTRODUCTION) return
+
+  const { application } = input
+  if (!application) return
 
   let { relationshipManager } = application
   if (!relationshipManager) return
+
+  let { req, user, to, other={} } = input
 
   relationshipManager = parseStub(relationshipManager).permalink
   // avoid infinite loop of sending to the same person
@@ -704,6 +708,7 @@ proto._didSend = co(function* (input, sentObject) {
   // nothing to unwrap here, this is an original from our bot
   yield this.forwardToEmployee({
     req,
+    from: user,
     other,
     object: sentObject,
     to: relationshipManager
