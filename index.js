@@ -182,7 +182,7 @@ proto._maybeForwardByContext = co(function* ({ req }) {
 
   yield this.forwardToEmployee({
     req,
-    to: candidate.id,
+    to: candidate,
     other: { context }
   })
 })
@@ -346,7 +346,7 @@ proto._maybeAssignRM = co(function* ({ req, assignment }) {
   })
 })
 
-proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) {
+proto.approveOrDeny = co(function* ({ req, approvedBy, applicant, application, judgment }) {
   const { bot, productsAPI } = this
   // TODO: maybe only relationship manager or someone with the right role
   // should be able to perform these actions
@@ -362,7 +362,8 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, application, judgment }) 
     return
   }
 
-  const applicant = yield bot.users.get(applicantPermalink)
+  if (!applicant) applicant = yield bot.users.get(applicantPermalink)
+
   const opts = { req, user: applicant, application, approvedBy }
   if (approve) {
     yield productsAPI.approveApplication(opts)
@@ -387,6 +388,7 @@ proto._onmessage = co(function* (req) {
         yield this.approveOrDeny({
           req,
           approvedBy: user,
+          applicant,
           application,
           judgment: object
         })
@@ -523,7 +525,8 @@ proto.assignRelationshipManager = co(function* ({
 }) {
   const { bot, productsAPI } = this
   const rmID = relationshipManager.id || relationshipManager
-  if (application.relationshipManager === rmID) {
+  const currentRM = application.relationshipManager
+  if (currentRM === rmID) {
     return
   }
 
@@ -544,6 +547,12 @@ proto.assignRelationshipManager = co(function* ({
   application.relationshipManager = relationshipManager.identity
 
   const { context } = application
+  // const promiseFireRM = currentRM ? productsAPI.send({
+  //   req,
+  //   to: currentRM,
+  //   object:
+  // }) : RESOLVED
+
   const promiseIntro = this.mutuallyIntroduce({
     req,
     a: applicant,
@@ -694,7 +703,7 @@ proto._didSend = co(function* (input, sentObject) {
   let { relationshipManager } = application
   if (!relationshipManager) return
 
-  let { req, user, to, other={} } = input
+  let { req, to, other={} } = input
 
   relationshipManager = parseStub(relationshipManager).permalink
   // avoid infinite loop of sending to the same person
@@ -717,7 +726,7 @@ proto._didSend = co(function* (input, sentObject) {
   // nothing to unwrap here, this is an original from our bot
   yield this.forwardToEmployee({
     req,
-    from: user,
+    from: to,
     other,
     object: sentObject,
     to: relationshipManager
