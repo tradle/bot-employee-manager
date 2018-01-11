@@ -117,6 +117,7 @@ test('basic', co(function* (t) {
   t.equal(sendSpy.getCall(1).args[0].object[TYPE], 'tradle.Introduction')
   t.equal(sendSpy.getCall(2).args[0].object[TYPE], 'tradle.Introduction')
   t.equal(api.saveNewVersionOfApplication.callCount, 1)
+  t.same(application.relationshipManagers, [relationshipManager.identity])
 
   sendSpy.restore()
   sendSpy = sinon.spy(api, 'send')
