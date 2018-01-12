@@ -109,7 +109,7 @@ proto.handleMessages = function handleMessages (handle=true) {
     }, true),
 
     productsAPI.plugins.use({
-      didApproveApplication: ({ user, application }, certificate) => {
+      didApproveApplication: ({ req, user, application }, certificate) => {
         if (certificate[TYPE] == EMPLOYEE_PASS) {
           this._addEmployeeRole(user)
         }
@@ -589,7 +589,7 @@ proto._onFormsCollected = co(function* ({ req, user, application }) {
   }
 
   if (approve) {
-    return this.hire(req)
+    return this.hire({ req, user, application })
   }
 })
 
@@ -601,7 +601,7 @@ proto._onFormsCollected = co(function* ({ req, user, application }) {
 
 // const defaultOnFormsCollected = productsAPI.removeDefaultHandler('onFormsCollected')
 
-proto.hire = function hire ({ user, application }) {
+proto.hire = function hire ({ req, user, application }) {
   const { bot, productsAPI } = this
   if (this.isEmployee(user)) {
     this.logger.debug(`user ${user.id} is already an employee`)
@@ -619,10 +619,10 @@ proto.hire = function hire ({ user, application }) {
     }
   }
 
-  return productsAPI.approveApplication({ user, application })
+  return productsAPI.approveApplication({ req, user, application })
 }
 
-proto.fire = function fire ({ user, application }) {
+proto.fire = function fire ({ req, user, application }) {
   const { bot, productsAPI } = this
   if (!this.isEmployee(user)) {
     throw new Error(`user ${user.id} is not an employee`)
@@ -641,7 +641,7 @@ proto.fire = function fire ({ user, application }) {
   }
 
   removeEmployeeRole(user)
-  return productsAPI.revokeCertificate({ user, application })
+  return productsAPI.revokeCertificate({ req, user, application })
 }
 
 proto.mutuallyIntroduce = co(function* ({ req, a, b, context }) {
