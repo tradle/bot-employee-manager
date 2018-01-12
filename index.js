@@ -681,7 +681,7 @@ proto._willSend = function _willSend (opts) {
   const { message={} } = req
   const { originalSender } = message
   if (originalSender) {
-    this.logger.debug('setting "forward" based on original sender')
+    this.logger.debug('setting "forward" based on original sender', { originalSender })
     other.forward = originalSender
     // in case it was null
     opts.other = other
