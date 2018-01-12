@@ -577,8 +577,7 @@ proto.assignRelationshipManager = co(function* ({
 })
 
 // auto-approve first employee
-proto._onFormsCollected = co(function* (req) {
-  const { user, application } = req
+proto._onFormsCollected = co(function* ({ req, user, application }) {
   if (this.isEmployee(user) || application.requestFor !== EMPLOYEE_ONBOARDING) {
     return
   }
