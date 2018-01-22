@@ -124,7 +124,7 @@ proto._deduceApplication = co(function* (req) {
 
   const { context, forward, object } = message
   const type = object[TYPE]
-  if (type === ASSIGN_RM) {
+  if (type === ASSIGN_RM || type == APPROVAL || type === DENIAL) {
     return yield this.productsAPI.getApplicationByStub(object.application)
   }
 
