@@ -353,7 +353,7 @@ proto._maybeAssignRM = co(function* ({ req, assignment }) {
   })
 })
 
-proto.approveOrDeny = co(function* ({ req, approvedBy, applicant, application, judgment }) {
+proto.approveOrDeny = co(function* ({ req, judge, applicant, application, judgment }) {
   const { bot, productsAPI } = this
   // TODO: maybe only relationship manager or someone with the right role
   // should be able to perform these actions
@@ -364,14 +364,14 @@ proto.approveOrDeny = co(function* ({ req, approvedBy, applicant, application, j
   }
 
   const applicantPermalink = parseStub(application.applicant).permalink
-  if (applicantPermalink === approvedBy.id) {
+  if (applicantPermalink === judge.id) {
     this.logger.debug('applicant cannot approve/deny their own application')
     return
   }
 
   if (!applicant) applicant = yield bot.users.get(applicantPermalink)
 
-  const opts = { req, user: applicant, application, approvedBy }
+  const opts = { req, user: applicant, application, judge }
   if (approve) {
     yield productsAPI.approveApplication(opts)
   } else {
@@ -394,7 +394,7 @@ proto._onmessage = co(function* (req) {
       if (type === APPROVAL || type === DENIAL) {
         yield this.approveOrDeny({
           req,
-          approvedBy: user,
+          judge: user,
           applicant,
           application,
           judgment: object
