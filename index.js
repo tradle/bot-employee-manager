@@ -110,7 +110,7 @@ proto.handleMessages = function handleMessages (handle=true) {
 
     productsAPI.plugins.use({
       didApproveApplication: ({ req, user, application }, certificate) => {
-        if (certificate[TYPE] == EMPLOYEE_PASS) {
+        if (certificate && certificate[TYPE] == EMPLOYEE_PASS) {
           this._addEmployeeRole(user)
         }
       }
