@@ -324,8 +324,9 @@ proto.reSignAndForward = co(function* ({ req, to, myIdentity }) {
       _time: object.time || Date.now()
     })
 
-    yield this.bot.db.put(object)
+    // otherwise conditional put will fail
     yield this.bot.db.del(original)
+    yield this.bot.db.put(object)
   }
 
   const other = {
