@@ -1,8 +1,8 @@
 const co = require('co').wrap
 const _ = require('lodash')
-const { TYPE } = require('@tradle/constants')
+const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
-const { parseId, parseStub } = require('@tradle/validate-resource').utils
+const { parseId, parseStub, omitVirtual } = require('@tradle/validate-resource').utils
 const models = require('./models')
 const {
   debug,
@@ -28,14 +28,18 @@ const {
   INTRODUCTION,
   SHARE_REQUEST,
   VERIFICATION,
-  APPLICATION
+  APPLICATION,
+  FORM_REQUEST,
+  FORM_ERROR
 } = require('./types')
 
 const ACTION_TYPES = [
   ASSIGN_RM,
   VERIFICATION,
   APPROVAL,
-  DENIAL
+  DENIAL,
+  FORM_ERROR,
+  FORM_REQUEST
 ]
 
 const assignRMModel = models[ASSIGN_RM]
@@ -110,7 +114,7 @@ proto.handleMessages = function handleMessages (handle=true) {
 
     productsAPI.plugins.use({
       didApproveApplication: ({ req, user, application }, certificate) => {
-        if (certificate && certificate[TYPE] == EMPLOYEE_PASS) {
+        if (certificate[TYPE] == EMPLOYEE_PASS) {
           this._addEmployeeRole(user)
         }
       }
@@ -405,6 +409,30 @@ proto._onmessage = co(function* (req) {
 
       if (type === VERIFICATION) {
         // defer to bot-products to import
+        return
+      }
+
+      if (type === FORM_REQUEST) {
+        yield this.productsAPI.requestItem({
+          req,
+          user: applicant,
+          application,
+          item: _.omit(omitVirtual(object), SIG),
+          other: { originalSender: user.id }
+        })
+
+        return
+      }
+
+      if (type === FORM_ERROR) {
+        yield this.productsAPI.requestEdit({
+          req,
+          user: applicant,
+          application,
+          details: _.omit(omitVirtual(object), SIG),
+          other: { originalSender: user.id }
+        })
+
         return
       }
     }

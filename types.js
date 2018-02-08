@@ -9,5 +9,7 @@ module.exports = {
   SHARE_REQUEST: 'tradle.ShareRequest',
   VERIFICATION: 'tradle.Verification',
   APPLICATION: 'tradle.Application',
-  OBJECT: 'tradle.Object'
+  OBJECT: 'tradle.Object',
+  FORM_REQUEST: 'tradle.FormRequest',
+  FORM_ERROR: 'tradle.FormError'
 }
