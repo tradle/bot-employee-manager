@@ -16,7 +16,8 @@ const baseModels = require('@tradle/merge-models')()
   .add(require('@tradle/models-products-bot'))
   .get()
 
-const manageMonkeys = require('./')
+// const manageMonkeys = require('./manager')
+const { createPlugin } = require('./')
 const roleModel = baseModels['tradle.products.Role']
 const employeeRole = buildResource.enumValue({
   model: roleModel,
@@ -62,7 +63,7 @@ test('basic', co(function* (t) {
   })
 
   let onmessage
-  const { api, manager, bot, receive } = newMock({
+  const { api, manager, bot, receive, handleMessages } = newMock({
     users: [
       customer,
       relationshipManager
@@ -92,7 +93,7 @@ test('basic', co(function* (t) {
   })
 
   t.equal(sendSpy.callCount, 0)
-  manager.handleMessages()
+  handleMessages()
 
   yield receive({
     user: relationshipManager,
@@ -195,7 +196,7 @@ test('basic', co(function* (t) {
 
   sendSpy.restore()
   sendSpy = sinon.spy(api, 'send')
-  manager.handleMessages(false)
+  handleMessages(false)
 
   yield receive({
     user: relationshipManager,
@@ -399,12 +400,13 @@ function newMock ({ users, application }) {
   // })
 
   bot.onmessage(productsAPI.onmessage)
-  const manager = manageMonkeys({ bot, productsAPI, handleMessages: false })
+  const { manager, handleMessages } = createPlugin({ bot, productsAPI })
   return {
     bot,
     receive,
     api: productsAPI,
-    manager
+    manager,
+    handleMessages
   }
 }
 
