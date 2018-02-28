@@ -76,10 +76,6 @@ function EmployeeManager ({
   // const assignRMModel = createAssignRMModel({ productsAPI })
 
   this.bot = bot
-  productsAPI.addProducts({
-    products: ['tradle.EmployeeOnboarding']
-  })
-
   this._pluginSubscriptions = []
   this._handlingMessages = false
   if (handleMessages) this.handleMessages()
