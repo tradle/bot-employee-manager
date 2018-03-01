@@ -53,6 +53,17 @@ exports = module.exports = function createEmployeeManager (opts) {
   return new EmployeeManager(opts)
 }
 
+exports.isEmployee = isEmployee
+
+function isEmployee (user) {
+  const { id } = buildResource.enumValue({
+    model: roleModel,
+    value: 'employee'
+  })
+
+  return user.roles && user.roles.some(role => role.id === id)
+}
+
 function EmployeeManager ({
   bot,
   productsAPI,
@@ -767,14 +778,7 @@ proto._addEmployeeRole = function _addEmployeeRole (user) {
   return employeeRole
 }
 
-proto.isEmployee = function isEmployee (user) {
-  const { id } = buildResource.enumValue({
-    model: roleModel,
-    value: 'employee'
-  })
-
-  return user.roles && user.roles.some(role => role.id === id)
-}
+proto.isEmployee = isEmployee
 
 proto.haveAllSubmittedFormsBeenManuallyApproved = co(function* ({ application }) {
   if (!this.productsAPI.haveAllSubmittedFormsBeenVerified({ application })) {
