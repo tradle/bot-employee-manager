@@ -152,12 +152,15 @@ proto._deduceApplication = co(function* (req) {
       filter: {
         EQ: {
           [TYPE]: APPLICATION,
-          context: req.context
+          context
         }
       }
     })
   } catch (err) {
-    this.logger.debug('failed to get application by context', err.stack)
+    this.logger.debug('failed to get application by context', {
+      error: err.stack,
+      context
+    })
   }
 })
 
@@ -203,46 +206,46 @@ proto._maybeForwardByContext = co(function* ({ req }) {
 
 proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
   // if (models['tradle.Message'].isInterface) {
-    const results = yield this.bot.messages.inbox.find({
-      IndexName: 'context',
-      KeyConditionExpression: '#context = :context',
-      FilterExpression: '#author <> :author',
-      ExpressionAttributeNames: {
-        '#context': 'context',
-        '#author': '_author'
-      },
-      ExpressionAttributeValues: {
-        ':context': context,
-        ':author': user.id
-      },
-      ScanIndexForward: false,
-      Limit: 10
-    })
+    // const results = yield this.bot.messages.inbox.find({
+    //   IndexName: 'context',
+    //   KeyConditionExpression: '#context = :context',
+    //   FilterExpression: '#author <> :author',
+    //   ExpressionAttributeNames: {
+    //     '#context': 'context',
+    //     '#author': '_author'
+    //   },
+    //   ExpressionAttributeValues: {
+    //     ':context': context,
+    //     ':author': user.id
+    //   },
+    //   ScanIndexForward: false,
+    //   Limit: 10
+    // })
 
-    if (!results.length) {
-      throw new Error('NotFound')
-    }
+    // if (!results.length) {
+    //   throw new Error('NotFound')
+    // }
 
-    return results[0]
+    // return results[0]
   // }
 
-  // return yield this.bot.db.findOne({
-  //   select: ['_author'],
-  //   filter: {
-  //     EQ: {
-  //       [TYPE]: 'tradle.Message',
-  //       _inbound: true,
-  //       context
-  //     },
-  //     NEQ: {
-  //       _author: user.id
-  //     }
-  //   },
-  //   orderBy: {
-  //     property: 'time',
-  //     desc: true
-  //   }
-  // })
+  return yield this.bot.db.findOne({
+    select: ['_author'],
+    filter: {
+      EQ: {
+        [TYPE]: 'tradle.Message',
+        context,
+        _inbound: true
+      },
+      NEQ: {
+        _author: user.id
+      }
+    },
+    orderBy: {
+      property: 'time',
+      desc: true
+    }
+  })
 })
 
 proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
@@ -384,6 +387,12 @@ proto.approveOrDeny = co(function* ({ req, judge, applicant, application, judgme
   if (!applicant) applicant = yield bot.users.get(applicantPermalink)
 
   const opts = { req, user: applicant, application, judge }
+  const verb = approve ? 'approved' : 'denied'
+  this.logger.debug(`relationship manager ${verb} application`, {
+    relationshipManager: judge.id,
+    application: application._permalink
+  })
+
   if (approve) {
     yield productsAPI.approveApplication(opts)
   } else {
