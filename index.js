@@ -1,5 +1,7 @@
 const co = require('co').wrap
-const _ = require('lodash')
+const pick = require('lodash/pick')
+const omit = require('lodash/omit')
+const clone = require('lodash/clone')
 const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
 const { parseId, parseStub, omitVirtual } = require('@tradle/validate-resource').utils
@@ -404,7 +406,7 @@ proto._onmessage = co(function* (req) {
   const { user, application, applicant, message } = req
   this.logger.debug(
     'processing message, custom props:',
-    _.pick(message, ['originalSender', 'forward'])
+    pick(message, ['originalSender', 'forward'])
   )
 
   const { object, forward } = message
@@ -434,7 +436,7 @@ proto._onmessage = co(function* (req) {
           req,
           user: applicant,
           application,
-          item: _.omit(omitVirtual(object), SIG),
+          item: omit(omitVirtual(object), SIG),
           other: { originalSender: user.id }
         })
 
@@ -446,7 +448,7 @@ proto._onmessage = co(function* (req) {
           req,
           user: applicant,
           application,
-          details: _.omit(omitVirtual(object), SIG),
+          details: omit(omitVirtual(object), SIG),
           other: { originalSender: user.id }
         })
 
@@ -748,7 +750,7 @@ proto._didSend = co(function* (input, sentObject) {
     return
   }
 
-  const other = _.clone(input.other || {})
+  const other = clone(input.other || {})
   other.originalRecipient = originalRecipient
 
   yield relationshipManagers.map(co(function* (stub) {
