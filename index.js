@@ -44,6 +44,7 @@ const ACTION_TYPES = [
   FORM_REQUEST
 ]
 
+const notNull = x => x != null
 const assignRMModel = models[ASSIGN_RM]
 const roleModel = require('@tradle/models-products-bot')['tradle.products.Role']
 const isActionType = type => ACTION_TYPES.includes(type)
@@ -792,30 +793,30 @@ proto._addEmployeeRole = function _addEmployeeRole (user) {
 proto.isEmployee = isEmployee
 
 proto.haveAllSubmittedFormsBeenManuallyApproved = co(function* ({ application }) {
-  if (!this.productsAPI.haveAllSubmittedFormsBeenVerified({ application })) {
-    return false
-  }
+  const verifications = yield this.productsAPI.getVerifications({ application })
+  const formStubs = (application.forms || []).map(appSub => parseStub(appSub.submission))
+  const verified = verifications.map(verification => parseStub(verification.document))
+  const unverified = formStubs.filter(a => !verified.find(b => a.permalink === b.permalink))
+  if (unverified.length) return false
 
-  const { forms=[], verificationsImported=[] } = application
-  const info = verificationsImported.map(({ item, verification }) => {
-    return {
-      form: item,
-      verifier: verification._verifiedBy
-    }
-  })
+  const verifiersInfo = verifications.map(v => ({
+    form: parseStub(v.document),
+    verifier: v._verifiedBy
+  }))
 
-  const verifierPermalinks = uniqueStrings(info.map(({ verifier }) => verifier))
-  const verifiers = yield verifierPermalinks.map(_permalink => {
-    return this.bot.db.get({
-      [TYPE]: IDENTITY,
-      _permalink
-    })
-  })
+  const verifierPermalinks = uniqueStrings(verifiersInfo.map(({ verifier }) => verifier))
+  const verifiers = yield verifierPermalinks.map(_permalink => this.bot.db.get({
+    [TYPE]: IDENTITY,
+    _permalink
+  }))
 
-  const employees = verifiers.filter(user => this.isEmployee(user))
-  return forms.every(form => {
-    return verificationsImported
-      .filter(({ item }) => item.id === form.id)
-      .find(({ _verifiedBy }) => employees.find(user => user.id === _verifiedBy))
+  const employeeIds = verifiers
+    .map((user, i) => this.isEmployee(user) && verifierPermalinks[i])
+    .filter(notNull)
+
+  return formStubs.every(formStub => {
+    return verifications
+      .filter(v => parseStub(v.document).link === formStub.link)
+      .find(({ _verifiedBy }) => employeeIds.includes(_verifiedBy))
   })
 })
