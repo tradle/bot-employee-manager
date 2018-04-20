@@ -512,22 +512,39 @@ proto._onShareRequest = function ({ req }) {
 
   if (message.context) other.context = message.context
 
-  return Promise.all(object.links.map(link => {
-    return Promise.all(object.with.map(identityStub => {
-      const { permalink } = parseStub(identityStub)
-      this.logger.debug(`sharing`, {
-        link,
-        with: permalink
-      })
+  return Promise.all(object.with.map(identityStub => {
+    const { permalink } = parseStub(identityStub)
+    this.logger.debug(`sharing`, {
+      links: object.links,
+      with: permalink
+    })
 
-      return this.productsAPI.send({
-        req,
-        to: permalink,
-        link,
-        other
-      })
+    const batch = object.links.map(link => ({
+      req,
+      to: permalink,
+      link,
+      other
     }))
+
+    return this.productsAPI.sendBatch(batch)
   }))
+
+  // return Promise.all(object.links.map(link => {
+  //   return Promise.all(object.with.map(identityStub => {
+  //     const { permalink } = parseStub(identityStub)
+  //     this.logger.debug(`sharing`, {
+  //       link,
+  //       with: permalink
+  //     })
+
+  //     return this.productsAPI.send({
+  //       req,
+  //       to: permalink,
+  //       link,
+  //       other
+  //     })
+  //   }))
+  // }))
 }
 
 proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, other={} }) {
