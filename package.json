@@ -11,7 +11,7 @@
     "@tradle/models-products-bot": "*"
   },
   "devDependencies": {
-    "@tradle/bot-products": "github:tradle/bot-products#modeled",
+    "@tradle/bot-products": "github:tradle/bot-products",
     "@tradle/custom-models": "github:tradle/custom-models",
     "@tradle/engine": "^4.10.3",
     "@tradle/merge-models": "^2.1.0",
@@ -28,10 +28,10 @@
     "precommit": "yarn lint && yarn test"
   },
   "dependencies": {
-    "@tradle/build-resource": "^2.14.0",
+    "@tradle/build-resource": "^3.0.0",
     "@tradle/constants": "^2.1.0",
-    "@tradle/validate-model": "^5.0.0",
-    "@tradle/validate-resource": "^2.16.0",
+    "@tradle/validate-model": "^6.0.1",
+    "@tradle/validate-resource": "^3.0.0",
     "bindall": "^2.0.1",
     "bluebird": "^2.11.0",
     "co": "^4.6.0",
