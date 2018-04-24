@@ -684,6 +684,10 @@ proto.hire = function hire ({ req, user, application }) {
     }
   }
 
+  this.logger.debug('approving application for employee', {
+    application: application._permalink
+  })
+
   return productsAPI.approveApplication({ req, user, application })
 }
 
@@ -706,6 +710,10 @@ proto.fire = function fire ({ req, user, application }) {
   }
 
   removeEmployeeRole(user)
+  this.logger.debug('revoking application for employee', {
+    application: application._permalink
+  })
+
   return productsAPI.revokeCertificate({ req, user, application })
 }
 
