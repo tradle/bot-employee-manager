@@ -339,7 +339,7 @@ proto.reSignAndForward = co(function* ({ req, to, myIdentity }) {
 
     // otherwise conditional put will fail
     yield this.bot.db.del(original)
-    yield this.bot.db.put(object)
+    yield this.bot.save(object)
   }
 
   const other = {
