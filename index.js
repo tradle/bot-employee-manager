@@ -257,8 +257,8 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   const { object } = message
   const type = object[TYPE]
   if (this.isEmployee(user)) {
-    const myIdentity = yield this.bot.getMyIdentity()
-    if (myIdentity._permalink === forward) {
+    const myPermalink = yield this.bot.getPermalink()
+    if (myPermalink === forward) {
       this.logger.debug(`not forwarding ${type} ${object._link} to self`)
       return
     }
@@ -280,7 +280,7 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
       recipient: forward
     })
 
-    yield this.reSignAndForward({ req, to: forward, myIdentity })
+    yield this.forward({ req, to: forward })
     return
   }
 
@@ -320,28 +320,12 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
     from: req.user,
     to: forward
   })
-  // yield this.reSignAndForward({ req, to: forward })
+  // yield this.forward({ req, to: forward })
 })
 
-proto.reSignAndForward = co(function* ({ req, to, myIdentity }) {
+proto.forward = co(function* ({ req, to }) {
   const { user, message } = req
-  let { object } = message
-  const type = object[TYPE]
-  if (myIdentity._permalink == object._author) {
-    this.logger.debug('not re-signing, as original is also signed by me')
-  } else {
-    this.logger.debug(`re-signing ${type} before forwarding to ${to}`)
-    const original = object
-    object = yield this.bot.reSign(object)
-    buildResource.setVirtual(object, {
-      _time: object.time || Date.now()
-    })
-
-    // otherwise conditional put will fail
-    yield this.bot.db.del(original)
-    yield this.bot.save(object)
-  }
-
+  const { object } = message
   const other = {
     originalSender: user.id
   }
