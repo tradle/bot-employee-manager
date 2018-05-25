@@ -350,7 +350,7 @@ proto._maybeAssignRM = co(function* ({ req, assignment }) {
 
   const relationshipManager = getPermalinkFromStub(assignment.employee)
 
-  if (relationshipManager === user.id) {
+  if (relationshipManager === applicant.id) {
     this.logger.debug('applicant attempted to become the relationship manager for own application', {
       application: application._permalink
     })
