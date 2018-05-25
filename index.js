@@ -245,7 +245,7 @@ proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
       }
     },
     orderBy: {
-      property: 'time',
+      property: '_time',
       desc: true
     }
   })
