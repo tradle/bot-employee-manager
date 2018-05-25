@@ -32,7 +32,8 @@ const {
   VERIFICATION,
   APPLICATION,
   FORM_REQUEST,
-  FORM_ERROR
+  FORM_ERROR,
+  SIMPLE_MESSAGE
 } = require('./types')
 
 const ACTION_TYPES = [
@@ -51,6 +52,10 @@ const isActionType = type => ACTION_TYPES.includes(type)
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 const alwaysTrue = () => true
+const ORDER_BY_TIME_DESC = {
+  property: '_time',
+  desc: true
+}
 
 exports = module.exports = function createEmployeeManager (opts) {
   return new EmployeeManager(opts)
@@ -157,7 +162,8 @@ proto._deduceApplication = co(function* (req) {
           [TYPE]: APPLICATION,
           context
         }
-      }
+      },
+      orderBy: ORDER_BY_TIME_DESC
     })
   } catch (err) {
     this.logger.debug('failed to get application by context', {
@@ -244,10 +250,7 @@ proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
         _author: user.id
       }
     },
-    orderBy: {
-      property: '_time',
-      desc: true
-    }
+    orderBy: ORDER_BY_TIME_DESC
   })
 })
 
@@ -346,6 +349,25 @@ proto._maybeAssignRM = co(function* ({ req, assignment }) {
   }
 
   const relationshipManager = getPermalinkFromStub(assignment.employee)
+
+  if (relationshipManager === user.id) {
+    this.logger.debug('applicant attempted to become the relationship manager for own application', {
+      application: application._permalink
+    })
+
+    yield this.productsAPI.send({
+      req,
+      to: user,
+      application,
+      object: {
+        [TYPE]: SIMPLE_MESSAGE,
+        message: `You can't be the relationship manager for your own application!`
+      }
+    })
+
+    return
+  }
+
   yield this.assignRelationshipManager({
     req,
     applicant,
@@ -367,7 +389,20 @@ proto.approveOrDeny = co(function* ({ req, judge, applicant, application, judgme
 
   const applicantPermalink = parseStub(application.applicant).permalink
   if (applicantPermalink === judge.id) {
-    this.logger.debug('applicant cannot approve/deny their own application')
+    this.logger.debug('applicant attempted to approve/deny their own application', {
+      application: application._permalink
+    })
+
+    yield this.productsAPI.send({
+      req,
+      to: judge,
+      application,
+      object: {
+        [TYPE]: SIMPLE_MESSAGE,
+        message: `You can't approve/deny your own application!`
+      }
+    })
+
     return
   }
 

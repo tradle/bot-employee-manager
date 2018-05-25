@@ -11,5 +11,6 @@ module.exports = {
   APPLICATION: 'tradle.Application',
   OBJECT: 'tradle.Object',
   FORM_REQUEST: 'tradle.FormRequest',
-  FORM_ERROR: 'tradle.FormError'
+  FORM_ERROR: 'tradle.FormError',
+  SIMPLE_MESSAGE: 'tradle.SimpleMessage'
 }
