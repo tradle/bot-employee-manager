@@ -17,6 +17,7 @@
     "@tradle/merge-models": "^2.1.0",
     "@tradle/models": "github:tradle/models",
     "@tradle/models-products-bot": "github:tradle/models-products-bot",
+    "bluebird": "^3.5.1",
     "eslint": "^3.17.1",
     "husky": "^0.13.2",
     "sinon": "^3.2.1",
@@ -33,7 +34,6 @@
     "@tradle/validate-model": "^7.0.0",
     "@tradle/validate-resource": "^4.0.0",
     "bindall": "^2.0.1",
-    "bluebird": "^2.11.0",
     "co": "^4.6.0",
     "debug": "^2.6.1",
     "lodash": "^4.17.4"
