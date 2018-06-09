@@ -415,10 +415,24 @@ proto.approveOrDeny = co(function* ({ req, judge, applicant, application, judgme
     application: application._permalink
   })
 
-  if (approve) {
-    yield productsAPI.approveApplication(opts)
-  } else {
-    yield productsAPI.denyApplication(opts)
+  try {
+    if (approve) {
+      yield productsAPI.approveApplication(opts)
+    } else {
+      yield productsAPI.denyApplication(opts)
+    }
+  } catch (err) {
+    if (err.name !== 'Duplicate') throw err
+
+    yield this.productsAPI.send({
+      req,
+      to: judge,
+      application,
+      object: {
+        [TYPE]: SIMPLE_MESSAGE,
+        message: `This application has already been ${verb}`
+      }
+    })
   }
 })
 
