@@ -612,10 +612,15 @@ proto.listEmployees = co(function* (opts={}) {
     filter: {
       EQ: {
         [TYPE]: EMPLOYEE_PASS,
+        _author: yield this.bot.getMyPermalink()
       },
       NEQ: {
         revoked: true
       }
+    },
+    orderBy: {
+      property: '_time',
+      desc: true
     },
     limit
   })
