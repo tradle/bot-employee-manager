@@ -41,8 +41,6 @@ const ACTION_TYPES = [
   VERIFICATION,
   APPROVAL,
   DENIAL,
-  FORM_ERROR,
-  FORM_REQUEST
 ]
 
 const notNull = x => x != null
@@ -462,30 +460,6 @@ proto._onmessage = co(function* (req) {
 
       if (type === VERIFICATION) {
         // defer to bot-products to import
-        return
-      }
-
-      if (type === FORM_REQUEST) {
-        yield this.productsAPI.requestItem({
-          req,
-          user: applicant,
-          application,
-          item: omit(omitVirtual(object), SIG),
-          other: { originalSender: user.id }
-        })
-
-        return
-      }
-
-      if (type === FORM_ERROR) {
-        yield this.productsAPI.requestEdit({
-          req,
-          user: applicant,
-          application,
-          details: omit(omitVirtual(object), SIG),
-          other: { originalSender: user.id }
-        })
-
         return
       }
     }
