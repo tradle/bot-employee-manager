@@ -33,7 +33,8 @@ const {
   APPLICATION,
   FORM_REQUEST,
   FORM_ERROR,
-  SIMPLE_MESSAGE
+  SIMPLE_MESSAGE,
+  REQUEST_ERROR
 } = require('./types')
 
 const ACTION_TYPES = [
@@ -420,17 +421,34 @@ proto.approveOrDeny = co(function* ({ req, judge, applicant, application, judgme
       yield productsAPI.denyApplication(opts)
     }
   } catch (err) {
-    if (err.name !== 'Duplicate') throw err
-
-    yield this.productsAPI.send({
-      req,
-      to: judge,
-      application,
-      object: {
-        [TYPE]: SIMPLE_MESSAGE,
-        message: `This application has already been ${verb}`
-      }
-    })
+    switch (err.name) {
+      case 'Duplicate':
+        yield this.productsAPI.send({
+          req,
+          to: judge,
+          application,
+          object: {
+            [TYPE]: SIMPLE_MESSAGE,
+            message: `This application has already been ${verb}`
+          }
+        })
+        break
+      case 'AbortError':
+        yield this.productsAPI.send({
+          req,
+          to: judge,
+          application,
+          object: {
+            [TYPE]: REQUEST_ERROR,
+            message: err.message,
+            application,
+            date: new Date().getTime()
+          }
+        })
+        break
+      default:
+        throw err
+    }
   }
 })
 
