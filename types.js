@@ -13,5 +13,6 @@ module.exports = {
   FORM_REQUEST: 'tradle.FormRequest',
   FORM_ERROR: 'tradle.FormError',
   SIMPLE_MESSAGE: 'tradle.SimpleMessage',
-  REQUEST_ERROR: 'tradle.RequestError'
+  REQUEST_ERROR: 'tradle.RequestError',
+  CHECK_OVERRIDE: 'tradle.CheckOverride'
 }
