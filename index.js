@@ -147,7 +147,7 @@ proto._deduceApplication = co(function* (req) {
     type === ASSIGN_RM ||
     type == APPROVAL ||
     type === DENIAL ||
-    model.subClassOf === CHECK_OVERRIDE
+    this.bot.models[type].subClassOf === CHECK_OVERRIDE
   ) {
     return yield this.productsAPI.getApplicationByStub(object.application)
   }
