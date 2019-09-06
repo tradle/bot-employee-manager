@@ -513,10 +513,14 @@ proto._onmessage = co(function* (req) {
   }
 
   // forward from customer to relationship manager
-  const { relationshipManagers } = application
-  if (!relationshipManagers) return
+  // const { relationshipManagers } = application
+  // if (!relationshipManagers) return
 
-  yield relationshipManagers.map(co(function* (stub) {
+  const { reviewer } = application
+  if (!reviewer) return
+
+  // yield relationshipManagers.map(co(function* (stub) {
+  yield [reviewer].map(co(function* (stub) {
     const rmPermalink = getPermalinkFromStub(stub)
     this.logger.debug('forwarding', {
       to: 'rm',
@@ -626,7 +630,7 @@ proto.listEmployees = co(function* (opts={}) {
   return items || []
 })
 
-proto.assignRelationshipManager = co(function* ({
+proto.assignRelationshipManager = co(function*({
   req,
   applicant,
   relationshipManager,
@@ -635,26 +639,28 @@ proto.assignRelationshipManager = co(function* ({
 }) {
   const { bot, productsAPI } = this
   const rmID = relationshipManager.id || relationshipManager
-  const rms = application.relationshipManagers || []
-  const alreadyAssigned = rms.some(stub => getPermalinkFromStub(stub) === rmID)
-  if (alreadyAssigned) {
+  const rms = application.reviewer // application.relationshipManagers || []
+
+  if (rms && rms === getPermalinkFromStub(rms)) {
     this.logger.debug('ignoring request to assign existing relationship manager')
     return
   }
 
-  ;[applicant, relationshipManager] = yield [
-    applicant,
-    relationshipManager
-  ].map(userOrId => {
-    return typeof userOrId === 'string'
-      ? bot.users.get(userOrId)
-      : Promise.resolve(userOrId)
-  })
+  // const alreadyAssigned = rms.some(stub => getPermalinkFromStub(stub) === rmID)
+  // if (alreadyAssigned) {
+  //   this.logger.debug('ignoring request to assign existing relationship manager')
+  //   return
+  // }
+
+  // ;[applicant, relationshipManager] = yield [
+  [applicant, relationshipManager] = yield [applicant, relationshipManager].map(userOrId =>
+    typeof userOrId === 'string' ? bot.users.get(userOrId) : Promise.resolve(userOrId)
+  )
 
   this.logger.debug(`assigning relationship manager ${rmID} to user ${applicant.id}`)
   const stub = getUserIdentityStub(relationshipManager)
-  rms.push(stub)
-  application.relationshipManagers = rms
+  application.reviewer = stub
+  // application.relationshipManagers = rms
 
   const { context } = application
   const promiseIntro = this.mutuallyIntroduce({
@@ -671,12 +677,8 @@ proto.assignRelationshipManager = co(function* ({
     other: { context }
   })
 
-  yield [
-    promiseIntro,
-    promiseSendVerification
-  ]
+  yield [promiseIntro, promiseSendVerification]
 })
-
 // auto-approve first employee
 proto._onFormsCollected = co(function* ({ req, user, application }) {
   if (this.isEmployee(user) || application.requestFor !== EMPLOYEE_ONBOARDING) {
@@ -804,8 +806,11 @@ proto._didSend = co(function* (input, sentObject) {
   const { req, to, application } = input
   if (!application) return
 
-  const { relationshipManagers } = application
-  if (!(relationshipManagers && relationshipManagers.length)) return
+  // const { relationshipManagers } = application
+  // if (!(relationshipManagers && relationshipManagers.length)) return
+
+  const { reviewer } = application
+  if (!reviewer) return
 
   const originalRecipient = to.id || to
   if (originalRecipient !== getPermalinkFromStub(application.applicant)) {
@@ -815,7 +820,8 @@ proto._didSend = co(function* (input, sentObject) {
   const other = clone(input.other || {})
   other.originalRecipient = originalRecipient
 
-  yield relationshipManagers.map(co(function* (stub) {
+  // yield relationshipManagers.map(co(function* (stub) {
+  yield [reviewer].map(co(function* (stub) {
     const userId = getPermalinkFromStub(stub)
     // avoid infinite loop of sending to the same person
     // and then forwarding, and then forwarding, and then forwarding...
