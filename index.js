@@ -4,6 +4,8 @@ const omit = require('lodash/omit')
 const clone = require('lodash/clone')
 const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
+const { buildResourceStub, title } = require('@tradle/build-resource')
+
 const { parseId, parseStub, omitVirtual } = require('@tradle/validate-resource').utils
 const models = require('./models')
 const {
@@ -38,12 +40,7 @@ const {
   CHECK_OVERRIDE
 } = require('./types')
 
-const ACTION_TYPES = [
-  ASSIGN_RM,
-  VERIFICATION,
-  APPROVAL,
-  DENIAL,
-]
+const ACTION_TYPES = [ASSIGN_RM, VERIFICATION, APPROVAL, DENIAL]
 
 const notNull = x => x != null
 const assignRMModel = models[ASSIGN_RM]
@@ -77,10 +74,10 @@ function EmployeeManager ({
   productsAPI,
   approveAll,
   wrapForEmployee,
-  logger=defaultLogger,
-  shouldForwardFromEmployee=alwaysTrue,
-  shouldForwardToEmployee=alwaysTrue,
-  handleMessages=true
+  logger = defaultLogger,
+  shouldForwardFromEmployee = alwaysTrue,
+  shouldForwardToEmployee = alwaysTrue,
+  handleMessages = true
 }) {
   bindAll(this)
 
@@ -102,7 +99,7 @@ function EmployeeManager ({
 
 const proto = EmployeeManager.prototype
 
-proto.handleMessages = function handleMessages (handle=true) {
+proto.handleMessages = function handleMessages (handle = true) {
   if (this._handlingMessages === handle) return
 
   this._handlingMessages = handle
@@ -122,10 +119,13 @@ proto.handleMessages = function handleMessages (handle=true) {
     }),
 
     // prepend
-    productsAPI.plugins.use({
-      onmessage: this._onmessage,
-      deduceApplication: this._deduceApplication
-    }, true),
+    productsAPI.plugins.use(
+      {
+        onmessage: this._onmessage,
+        deduceApplication: this._deduceApplication
+      },
+      true
+    ),
 
     productsAPI.plugins.use({
       didApproveApplication: ({ req, user, application }, certificate) => {
@@ -137,8 +137,8 @@ proto.handleMessages = function handleMessages (handle=true) {
   ]
 }
 
-proto._deduceApplication = co(function* (req) {
-  const { user, message={} } = req
+proto._deduceApplication = co(function*(req) {
+  const { user, message = {} } = req
   if (!this.isEmployee(user)) return
 
   const { context, forward, object } = message
@@ -182,7 +182,7 @@ proto._deduceApplication = co(function* (req) {
  * Attempt to detect the employee to forward the message to based on the "context"
  *
  */
-proto._maybeForwardByContext = co(function* ({ req }) {
+proto._maybeForwardByContext = co(function*({ req }) {
   const { user, context } = req
   // don't forward employee to employee
   if (!context || this.isEmployee(user)) return
@@ -218,29 +218,29 @@ proto._maybeForwardByContext = co(function* ({ req }) {
   })
 })
 
-proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
+proto._getLastInboundMessageByContext = co(function*({ user, context }) {
   // if (models['tradle.Message'].isInterface) {
-    // const results = yield this.bot.messages.inbox.find({
-    //   IndexName: 'context',
-    //   KeyConditionExpression: '#context = :context',
-    //   FilterExpression: '#author <> :author',
-    //   ExpressionAttributeNames: {
-    //     '#context': 'context',
-    //     '#author': '_author'
-    //   },
-    //   ExpressionAttributeValues: {
-    //     ':context': context,
-    //     ':author': user.id
-    //   },
-    //   ScanIndexForward: false,
-    //   Limit: 10
-    // })
+  // const results = yield this.bot.messages.inbox.find({
+  //   IndexName: 'context',
+  //   KeyConditionExpression: '#context = :context',
+  //   FilterExpression: '#author <> :author',
+  //   ExpressionAttributeNames: {
+  //     '#context': 'context',
+  //     '#author': '_author'
+  //   },
+  //   ExpressionAttributeValues: {
+  //     ':context': context,
+  //     ':author': user.id
+  //   },
+  //   ScanIndexForward: false,
+  //   Limit: 10
+  // })
 
-    // if (!results.length) {
-    //   throw new Error('NotFound')
-    // }
+  // if (!results.length) {
+  //   throw new Error('NotFound')
+  // }
 
-    // return results[0]
+  // return results[0]
   // }
 
   return yield this.bot.db.findOne({
@@ -259,7 +259,7 @@ proto._getLastInboundMessageByContext = co(function* ({ user, context }) {
   })
 })
 
-proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
+proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
   const { bot } = this
   const { user, message } = req
   const { object } = message
@@ -271,9 +271,7 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
       return
     }
 
-    const shouldForward = yield Promise.resolve(
-      this._shouldForwardFromEmployee({ req })
-    )
+    const shouldForward = yield Promise.resolve(this._shouldForwardFromEmployee({ req }))
 
     if (!shouldForward) {
       this.logger.debug(`not forwarding ${type} from employee ${user.id} to ${forward}`)
@@ -282,7 +280,7 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
 
     this.logger.debug('forwarding', {
       to: 'customer (specified by employee in message.forward)',
-      type: type,
+      type,
       context: message.context,
       author: user.id,
       recipient: forward
@@ -301,13 +299,13 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   }
 
   if (!this.isEmployee(recipient)) {
-    this.logger.debug(`refusing to forward: neither sender "${user.id}" nor recipient "${forward}" is an employee`)
+    this.logger.debug(
+      `refusing to forward: neither sender "${user.id}" nor recipient "${forward}" is an employee`
+    )
     return
   }
 
-  const shouldForward = yield Promise.resolve(
-    this._shouldForwardToEmployee({ req })
-  )
+  const shouldForward = yield Promise.resolve(this._shouldForwardToEmployee({ req }))
 
   if (!shouldForward) {
     this.logger.debug(`not forwarding ${type} from ${user.id} to employee ${forward}`)
@@ -316,7 +314,7 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
 
   this.logger.debug('forwarding', {
     to: 'employee (specified in message.forward)',
-    type: type,
+    type,
     context: message.context,
     author: user.id,
     recipient: forward
@@ -331,7 +329,7 @@ proto._maybeForwardToOrFromEmployee = co(function* ({ req, forward }) {
   // yield this.forward({ req, to: forward })
 })
 
-proto.forward = co(function* ({ req, to }) {
+proto.forward = co(function*({ req, to }) {
   const { user, message } = req
   const { object } = message
   const other = {
@@ -345,20 +343,25 @@ proto.forward = co(function* ({ req, to }) {
   return this.productsAPI.send({ req, object, to, other })
 })
 
-proto._maybeAssignRM = co(function* ({ req, assignment }) {
+proto._maybeAssignRM = co(function*({ req, assignment }) {
   const { bot, productsAPI } = this
   const { user, application, applicant } = req
   if (!this.isEmployee(user)) {
-    this.logger.debug(`refusing to assign relationship manager as sender "${user.id}" is not an employee`)
+    this.logger.debug(
+      `refusing to assign relationship manager as sender "${user.id}" is not an employee`
+    )
     return
   }
 
   const relationshipManager = getPermalinkFromStub(assignment.employee)
 
   if (relationshipManager === applicant.id) {
-    this.logger.debug('applicant attempted to become the relationship manager for own application', {
-      application: application._permalink
-    })
+    this.logger.debug(
+      'applicant attempted to become the relationship manager for own application',
+      {
+        application: application._permalink
+      }
+    )
 
     yield this.productsAPI.send({
       req,
@@ -382,7 +385,7 @@ proto._maybeAssignRM = co(function* ({ req, assignment }) {
   })
 })
 
-proto.approveOrDeny = co(function* ({ req, judge, applicant, application, judgment }) {
+proto.approveOrDeny = co(function*({ req, judge, applicant, application, judgment }) {
   const { bot, productsAPI } = this
   // TODO: maybe only relationship manager or someone with the right role
   // should be able to perform these actions
@@ -458,7 +461,7 @@ proto.approveOrDeny = co(function* ({ req, judge, applicant, application, judgme
   }
 })
 
-proto._onmessage = co(function* (req) {
+proto._onmessage = co(function*(req) {
   const { user, application, applicant, message } = req
   this.logger.debug(
     'processing message, custom props:',
@@ -516,26 +519,28 @@ proto._onmessage = co(function* (req) {
   // const { relationshipManagers } = application
   // if (!relationshipManagers) return
 
-  const { reviewer } = application
-  if (!reviewer) return
+  const { analyst } = application
+  if (!analyst) return
 
   // yield relationshipManagers.map(co(function* (stub) {
-  yield [reviewer].map(co(function* (stub) {
-    const rmPermalink = getPermalinkFromStub(stub)
-    this.logger.debug('forwarding', {
-      to: 'rm',
-      type,
-      context: message.context,
-      author: user.id,
-      recipient: rmPermalink
-    })
+  yield [analyst].map(
+    co(function*(stub) {
+      const rmPermalink = getPermalinkFromStub(stub)
+      this.logger.debug('forwarding', {
+        to: 'rm',
+        type,
+        context: message.context,
+        author: user.id,
+        recipient: rmPermalink
+      })
 
-    yield this.forwardToEmployee({
-      req,
-      from: req.user,
-      to: rmPermalink
-    })
-  }).bind(this))
+      yield this.forwardToEmployee({
+        req,
+        from: req.user,
+        to: rmPermalink
+      })
+    }).bind(this)
+  )
 })
 
 proto._onShareRequest = function ({ req }) {
@@ -547,22 +552,24 @@ proto._onShareRequest = function ({ req }) {
 
   if (message.context) other.context = message.context
 
-  return Promise.all(object.with.map(identityStub => {
-    const { permalink } = parseStub(identityStub)
-    this.logger.debug(`sharing`, {
-      links: object.links,
-      with: permalink
+  return Promise.all(
+    object.with.map(identityStub => {
+      const { permalink } = parseStub(identityStub)
+      this.logger.debug(`sharing`, {
+        links: object.links,
+        with: permalink
+      })
+
+      const batch = object.links.map(link => ({
+        req,
+        to: permalink,
+        link,
+        other
+      }))
+
+      return this.productsAPI.sendBatch(batch)
     })
-
-    const batch = object.links.map(link => ({
-      req,
-      to: permalink,
-      link,
-      other
-    }))
-
-    return this.productsAPI.sendBatch(batch)
-  }))
+  )
 
   // return Promise.all(object.links.map(link => {
   //   return Promise.all(object.with.map(identityStub => {
@@ -582,10 +589,10 @@ proto._onShareRequest = function ({ req }) {
   // }))
 }
 
-proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, other={} }) {
+proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, other = {} }) {
   // const other = getCustomMessageProperties(message)
   // delete other.forward
-  let message = req && req.message
+  const message = req && req.message
   if (!object && message) {
     object = this._wrapForEmployee ? message : message.object
   }
@@ -603,12 +610,10 @@ proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, o
 }
 
 proto.hasEmployees = function hasEmployees () {
-  return this.listEmployees({ limit: 1 })
-    .then(items => items.length > 0)
+  return this.listEmployees({ limit: 1 }).then(items => items.length > 0)
 }
 
-proto.list =
-proto.listEmployees = co(function* (opts={}) {
+proto.list = proto.listEmployees = co(function*(opts = {}) {
   const { limit } = opts
   const { items } = yield this.bot.db.find({
     filter: {
@@ -639,7 +644,7 @@ proto.assignRelationshipManager = co(function*({
 }) {
   const { bot, productsAPI } = this
   const rmID = relationshipManager.id || relationshipManager
-  const rms = application.reviewer // application.relationshipManagers || []
+  const rms = application.analyst // application.relationshipManagers || []
 
   if (rms && rms === getPermalinkFromStub(rms)) {
     this.logger.debug('ignoring request to assign existing relationship manager')
@@ -653,13 +658,30 @@ proto.assignRelationshipManager = co(function*({
   // }
 
   // ;[applicant, relationshipManager] = yield [
-  [applicant, relationshipManager] = yield [applicant, relationshipManager].map(userOrId =>
-    typeof userOrId === 'string' ? bot.users.get(userOrId) : Promise.resolve(userOrId)
-  )
+  [applicant, relationshipManager] = yield [applicant, relationshipManager].map(userOrId => {
+    if (typeof userOrId === 'string')
+      return bot.users.get(userOrId)
+    return Promise.resolve(userOrId)
+  })
 
   this.logger.debug(`assigning relationship manager ${rmID} to user ${applicant.id}`)
   const stub = getUserIdentityStub(relationshipManager)
-  application.reviewer = stub
+
+  const employee = yield this.bot.db.findOne({
+    filter: {
+      EQ: {
+        [TYPE]: 'tradle.MyEmployeeOnboarding',
+        'owner._permalink': stub._permalink
+      }
+    }
+  })
+  const { analyst } = application
+  if (analyst && analyst._link === employee._link) {
+    this.logger.debug('ignoring request to assign existing relationship manager')
+    return
+  }
+  application.analyst = buildResourceStub({ resource: employee, models: bot.models })
+  // application.reviewer = stub
   // application.relationshipManagers = rms
 
   const { context } = application
@@ -680,7 +702,7 @@ proto.assignRelationshipManager = co(function*({
   yield [promiseIntro, promiseSendVerification]
 })
 // auto-approve first employee
-proto._onFormsCollected = co(function* ({ req, user, application }) {
+proto._onFormsCollected = co(function*({ req, user, application }) {
   if (this.isEmployee(user) || application.requestFor !== EMPLOYEE_ONBOARDING) {
     return
   }
@@ -712,10 +734,7 @@ proto.hire = function hire ({ req, user, application }) {
   }
 
   if (!application) {
-    application = productsAPI.state.getApplicationsByType(
-      user.applications,
-      EMPLOYEE_ONBOARDING
-    )[0]
+    application = productsAPI.state.getApplicationsByType(user.applications, EMPLOYEE_ONBOARDING)[0]
 
     if (!application) {
       throw new Error(`user ${user.id} has no ${EMPLOYEE_ONBOARDING} application`)
@@ -736,11 +755,9 @@ proto.fire = function fire ({ req, user, application }) {
   }
 
   if (application) {
-    application = user.applicationsApproved
-      .find(app => app._permalink === application._permalink)
+    application = user.applicationsApproved.find(app => app._permalink === application._permalink)
   } else {
-    application = user.applicationsApproved
-      .find(app => app.requestFor === EMPLOYEE_ONBOARDING)
+    application = user.applicationsApproved.find(app => app.requestFor === EMPLOYEE_ONBOARDING)
   }
 
   if (!this.isEmployee(user)) {
@@ -755,7 +772,7 @@ proto.fire = function fire ({ req, user, application }) {
   return productsAPI.revokeCertificate({ req, user, application })
 }
 
-proto.mutuallyIntroduce = co(function* ({ req, a, b, context }) {
+proto.mutuallyIntroduce = co(function*({ req, a, b, context }) {
   const { bot, productsAPI } = this
   const aPermalink = a.id || a
   const bPermalink = b.id || b
@@ -787,8 +804,8 @@ proto.mutuallyIntroduce = co(function* ({ req, a, b, context }) {
 })
 
 proto._willSend = function _willSend (opts) {
-  const { req={}, other={} } = opts
-  const { message={} } = req
+  const { req = {}, other = {} } = opts
+  const { message = {} } = req
   const { originalSender } = message
   if (originalSender) {
     this.logger.debug('setting "forward" based on original sender', { originalSender })
@@ -800,7 +817,7 @@ proto._willSend = function _willSend (opts) {
 
 // forward any messages sent by the bot
 // to relationship managers
-proto._didSend = co(function* (input, sentObject) {
+proto._didSend = co(function*(input, sentObject) {
   if (sentObject[TYPE] === INTRODUCTION) return
 
   const { req, to, application } = input
@@ -809,8 +826,8 @@ proto._didSend = co(function* (input, sentObject) {
   // const { relationshipManagers } = application
   // if (!(relationshipManagers && relationshipManagers.length)) return
 
-  const { reviewer } = application
-  if (!reviewer) return
+  const { analyst } = application
+  if (!analyst) return
 
   const originalRecipient = to.id || to
   if (originalRecipient !== getPermalinkFromStub(application.applicant)) {
@@ -821,30 +838,32 @@ proto._didSend = co(function* (input, sentObject) {
   other.originalRecipient = originalRecipient
 
   // yield relationshipManagers.map(co(function* (stub) {
-  yield [reviewer].map(co(function* (stub) {
-    const userId = getPermalinkFromStub(stub)
-    // avoid infinite loop of sending to the same person
-    // and then forwarding, and then forwarding, and then forwarding...
-    if (other.originalSender === userId || other.originalRecipient === userId) {
-      return
-    }
+  yield [analyst].map(
+    co(function*(stub) {
+      const userId = getPermalinkFromStub(stub)
+      // avoid infinite loop of sending to the same person
+      // and then forwarding, and then forwarding, and then forwarding...
+      if (other.originalSender === userId || other.originalRecipient === userId) {
+        return
+      }
 
-    this.logger.debug(`cc'ing`, {
-      type: sentObject[TYPE],
-      to: 'rm',
-      author: 'this bot',
-      recipient: userId,
-      originalRecipient: other.originalRecipient
-    })
+      this.logger.debug(`cc'ing`, {
+        type: sentObject[TYPE],
+        to: 'rm',
+        author: 'this bot',
+        recipient: userId,
+        originalRecipient: other.originalRecipient
+      })
 
-    // nothing to unwrap here, this is an original from our bot
-    yield this.forwardToEmployee({
-      req,
-      other,
-      object: sentObject,
-      to: userId
-    })
-  }).bind(this))
+      // nothing to unwrap here, this is an original from our bot
+      yield this.forwardToEmployee({
+        req,
+        other,
+        object: sentObject,
+        to: userId
+      })
+    }).bind(this)
+  )
 })
 
 proto._addEmployeeRole = function _addEmployeeRole (user) {
@@ -859,7 +878,7 @@ proto._addEmployeeRole = function _addEmployeeRole (user) {
 
 proto.isEmployee = isEmployee
 
-proto.haveAllSubmittedFormsBeenManuallyApproved = co(function* ({ application }) {
+proto.haveAllSubmittedFormsBeenManuallyApproved = co(function*({ application }) {
   const verifications = yield this.productsAPI.getVerifications({ application })
   const formStubs = (application.forms || []).map(appSub => parseStub(appSub.submission))
   const verified = verifications.map(verification => parseStub(verification.document))
@@ -872,18 +891,20 @@ proto.haveAllSubmittedFormsBeenManuallyApproved = co(function* ({ application })
   }))
 
   const verifierPermalinks = uniqueStrings(verifiersInfo.map(({ verifier }) => verifier))
-  const verifiers = yield verifierPermalinks.map(_permalink => this.bot.db.get({
-    [TYPE]: IDENTITY,
-    _permalink
-  }))
+  const verifiers = yield verifierPermalinks.map(_permalink =>
+    this.bot.db.get({
+      [TYPE]: IDENTITY,
+      _permalink
+    })
+  )
 
   const employeeIds = verifiers
     .map((user, i) => this.isEmployee(user) && verifierPermalinks[i])
     .filter(notNull)
 
-  return formStubs.every(formStub => {
-    return verifications
+  return formStubs.every(formStub =>
+    verifications
       .filter(v => parseStub(v.document).link === formStub.link)
       .find(({ _verifiedBy }) => employeeIds.includes(_verifiedBy))
-  })
+  )
 })
