@@ -522,8 +522,11 @@ proto._onmessage = co(function*(req) {
   const { analyst } = application
   if (!analyst) return
 
+  const employeePass = yield this.bot.getResource(analyst)
+  const employee = employeePass.owner
+
   // yield relationshipManagers.map(co(function* (stub) {
-  yield [analyst].map(
+  yield [employee].map(
     co(function*(stub) {
       const rmPermalink = getPermalinkFromStub(stub)
       this.logger.debug('forwarding', {
@@ -837,8 +840,11 @@ proto._didSend = co(function*(input, sentObject) {
   const other = clone(input.other || {})
   other.originalRecipient = originalRecipient
 
+  const employeePass = yield this.bot.getResource(analyst)
+  const employee = employeePass.owner
+
   // yield relationshipManagers.map(co(function* (stub) {
-  yield [analyst].map(
+  yield [employee].map(
     co(function*(stub) {
       const userId = getPermalinkFromStub(stub)
       // avoid infinite loop of sending to the same person
