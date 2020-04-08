@@ -12,7 +12,7 @@ const buildResource = require('@tradle/build-resource')
 const fakeResource = require('@tradle/build-resource/fake')
 const baseModels = require('@tradle/merge-models')()
   .add(require('@tradle/models').models)
-  .add(require('@tradle/custom-models'))
+  .add(require('@tradle/custom-models').models)
   .add(require('@tradle/models-products-bot'))
   .get()
 
