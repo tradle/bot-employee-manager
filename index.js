@@ -2,6 +2,8 @@ const co = require('co').wrap
 const pick = require('lodash/pick')
 const omit = require('lodash/omit')
 const clone = require('lodash/clone')
+const extend = require('lodash/extend')
+
 const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
 const { buildResourceStub, title } = require('@tradle/build-resource')
@@ -37,7 +39,8 @@ const {
   FORM_ERROR,
   SIMPLE_MESSAGE,
   REQUEST_ERROR,
-  CHECK_OVERRIDE
+  CHECK_OVERRIDE,
+  CE_NOTIFICATION
 } = require('./types')
 
 const ACTION_TYPES = [ASSIGN_RM, VERIFICATION, APPROVAL, DENIAL]
@@ -147,6 +150,7 @@ proto._deduceApplication = co(function*(req) {
     type === ASSIGN_RM ||
     type == APPROVAL ||
     type === DENIAL ||
+    type === CE_NOTIFICATION ||
     this.bot.models[type].subClassOf === CHECK_OVERRIDE
   ) {
     return yield this.productsAPI.getApplicationByStub(object.application)
@@ -343,18 +347,27 @@ proto.forward = co(function*({ req, to }) {
   return this.productsAPI.send({ req, object, to, other })
 })
 
-proto._maybeAssignRM = co(function*({ req, assignment }) {
+proto._maybeAssignRM = co(function*({ req, assignment, isEmployee }) {
   const { bot, productsAPI } = this
-  const { user, application, applicant } = req
-  if (!this.isEmployee(user)) {
+  let { user, application, applicant } = req
+  // if (!this.isEmployee(user)) {
+  if (!isEmployee) {
     this.logger.debug(
       `refusing to assign relationship manager as sender "${user.id}" is not an employee`
     )
     return
   }
 
+  // const relationshipManager = assignment._masterAuthor || getPermalinkFromStub(assignment.employee)
   const relationshipManager = getPermalinkFromStub(assignment.employee)
-
+  if (!applicant  &&  assignment.application) {
+    application = yield bot.getResource(assignment.application)
+    if (!application)
+      debugger
+    ({ applicant } = application)
+      applicant ={ id: applicant._permalink }
+      extend(req, {application, applicant})
+  }
   if (relationshipManager === applicant.id) {
     this.logger.debug(
       'applicant attempted to become the relationship manager for own application',
@@ -471,7 +484,24 @@ proto._onmessage = co(function*(req) {
   const { object, forward } = message
   const type = object[TYPE]
   // forward from employee to customer
-  if (this.isEmployee(user)) {
+
+  let isEmployee = this.isEmployee(user)
+  if (!isEmployee) {
+    if (object._masterAuthor) {
+      const pass = yield this.bot.db.findOne({
+        filter: {
+          EQ: {
+            [TYPE]: EMPLOYEE_PASS,
+            'owner._permalink': object._masterAuthor
+          },
+          NEQ: {
+            revoked: true
+          }
+        }})
+      isEmployee = pass !== null
+    }
+  }
+  if (isEmployee) {
     if (application) {
       if (type === APPROVAL || type === DENIAL) {
         yield this.approveOrDeny({
@@ -493,7 +523,7 @@ proto._onmessage = co(function*(req) {
 
     // assign relationship manager
     if (type === ASSIGN_RM) {
-      yield this._maybeAssignRM({ req, assignment: object })
+      yield this._maybeAssignRM({ req, assignment: object, isEmployee })
       return
     }
 
@@ -670,11 +700,16 @@ proto.assignRelationshipManager = co(function*({
   this.logger.debug(`assigning relationship manager ${rmID} to user ${applicant.id}`)
   const stub = getUserIdentityStub(relationshipManager)
 
+  let ownerHash
+  if (assignment._masterAuthor)
+    ownerHash = assignment._masterAuthor
+  else
+    ownerHash = stub._permalink
   const employee = yield this.bot.db.findOne({
     filter: {
       EQ: {
         [TYPE]: 'tradle.MyEmployeeOnboarding',
-        'owner._permalink': stub._permalink
+        'owner._permalink': ownerHash
       }
     }
   })
