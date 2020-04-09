@@ -63,13 +63,13 @@ exports = module.exports = function createEmployeeManager (opts) {
 
 exports.isEmployee = isEmployee
 
-function isEmployee (user) {
+function isEmployee ({user, masterUser}) {
+  let realUsers = [user, masterUser].filter(value => value)
   const { id } = buildResource.enumValue({
     model: roleModel,
     value: 'employee'
   })
-
-  return user.roles && user.roles.some(role => role.id === id)
+  return realUsers.some(user => user.roles && user.roles.some(role => role.id === id))
 }
 
 function EmployeeManager ({
@@ -141,8 +141,8 @@ proto.handleMessages = function handleMessages (handle = true) {
 }
 
 proto._deduceApplication = co(function*(req) {
-  const { user, message = {} } = req
-  if (!this.isEmployee(user)) return
+  const { message = {} } = req
+  if (!this.isEmployee(req)) return
 
   const { context, forward, object } = message
   const type = object[TYPE]
@@ -189,7 +189,7 @@ proto._deduceApplication = co(function*(req) {
 proto._maybeForwardByContext = co(function*({ req }) {
   const { user, context } = req
   // don't forward employee to employee
-  if (!context || this.isEmployee(user)) return
+  if (!context || this.isEmployee(req)) return
 
   const { bot } = this
   let last
@@ -203,7 +203,7 @@ proto._maybeForwardByContext = co(function*({ req }) {
   this.logger.debug(`found forward target candidate ${JSON.stringify(last)} by context ${context}`)
   const { _author } = last
   const candidate = yield bot.users.get(_author)
-  if (!this.isEmployee(candidate)) return
+  if (!this.isEmployee({user: candidate})) return
 
   const type = req.message.object[TYPE]
   this.logger.debug('forwarding', {
@@ -268,7 +268,7 @@ proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
   const { user, message } = req
   const { object } = message
   const type = object[TYPE]
-  if (this.isEmployee(user)) {
+  if (this.isEmployee(req)) {
     const myPermalink = yield this.bot.getPermalink()
     if (myPermalink === forward) {
       this.logger.debug(`not forwarding ${type} ${object._link} to self`)
@@ -302,7 +302,7 @@ proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
     return
   }
 
-  if (!this.isEmployee(recipient)) {
+  if (!this.isEmployee({user: recipient})) {
     this.logger.debug(
       `refusing to forward: neither sender "${user.id}" nor recipient "${forward}" is an employee`
     )
@@ -347,11 +347,11 @@ proto.forward = co(function*({ req, to }) {
   return this.productsAPI.send({ req, object, to, other })
 })
 
-proto._maybeAssignRM = co(function*({ req, assignment, isEmployee }) {
+proto._maybeAssignRM = co(function*({ req, assignment }) {
   const { bot, productsAPI } = this
   let { user, application, applicant } = req
   // if (!this.isEmployee(user)) {
-  if (!isEmployee) {
+  if (!this.isEmployee(req)) {
     this.logger.debug(
       `refusing to assign relationship manager as sender "${user.id}" is not an employee`
     )
@@ -475,7 +475,7 @@ proto.approveOrDeny = co(function*({ req, judge, applicant, application, judgmen
 })
 
 proto._onmessage = co(function*(req) {
-  const { user, application, applicant, message } = req
+  let { user, application, applicant, message } = req
   this.logger.debug(
     'processing message, custom props:',
     pick(message, ['originalSender', 'forward'])
@@ -485,22 +485,7 @@ proto._onmessage = co(function*(req) {
   const type = object[TYPE]
   // forward from employee to customer
 
-  let isEmployee = this.isEmployee(user)
-  if (!isEmployee) {
-    if (object._masterAuthor) {
-      const pass = yield this.bot.db.findOne({
-        filter: {
-          EQ: {
-            [TYPE]: EMPLOYEE_PASS,
-            'owner._permalink': object._masterAuthor
-          },
-          NEQ: {
-            revoked: true
-          }
-        }})
-      isEmployee = pass !== null
-    }
-  }
+  let isEmployee = this.isEmployee(req)
   if (isEmployee) {
     if (application) {
       if (type === APPROVAL || type === DENIAL) {
@@ -523,7 +508,7 @@ proto._onmessage = co(function*(req) {
 
     // assign relationship manager
     if (type === ASSIGN_RM) {
-      yield this._maybeAssignRM({ req, assignment: object, isEmployee })
+      yield this._maybeAssignRM({ req, assignment: object })
       return
     }
 
@@ -741,7 +726,7 @@ proto.assignRelationshipManager = co(function*({
 })
 // auto-approve first employee
 proto._onFormsCollected = co(function*({ req, user, application }) {
-  if (this.isEmployee(user) || application.requestFor !== EMPLOYEE_ONBOARDING) {
+  if (this.isEmployee(req) || application.requestFor !== EMPLOYEE_ONBOARDING) {
     return
   }
 
@@ -765,8 +750,8 @@ proto._onFormsCollected = co(function*({ req, user, application }) {
 // const defaultOnFormsCollected = productsAPI.removeDefaultHandler('onFormsCollected')
 
 proto.hire = function hire ({ req, user, application }) {
-  const { bot, productsAPI } = this
-  if (this.isEmployee(user)) {
+  const { productsAPI } = this
+  if (this.isEmployee(req)) {
     this.logger.debug(`user ${user.id} is already an employee`)
     return
   }
@@ -787,8 +772,8 @@ proto.hire = function hire ({ req, user, application }) {
 }
 
 proto.fire = function fire ({ req, user, application }) {
-  const { bot, productsAPI } = this
-  if (!this.isEmployee(user)) {
+  const { productsAPI } = this
+  if (!this.isEmployee(req)) {
     throw new Error(`user ${user.id} is not an employee`)
   }
 
@@ -796,10 +781,6 @@ proto.fire = function fire ({ req, user, application }) {
     application = user.applicationsApproved.find(app => app._permalink === application._permalink)
   } else {
     application = user.applicationsApproved.find(app => app.requestFor === EMPLOYEE_ONBOARDING)
-  }
-
-  if (!this.isEmployee(user)) {
-    throw new Error(`user ${user.id} is not an employee`)
   }
 
   removeEmployeeRole(user)
@@ -876,7 +857,10 @@ proto._didSend = co(function*(input, sentObject) {
   other.originalRecipient = originalRecipient
 
   const employeePass = yield this.bot.getResource(analyst)
-  const employee = employeePass.owner
+  let employee = employeePass.owner
+  const { masterUser, user } = req
+  if (employee  &&  masterUser  &&  employee._permalink === masterUser.id)
+    employee = user.identity
 
   // yield relationshipManagers.map(co(function* (stub) {
   yield [employee].map(
@@ -940,7 +924,7 @@ proto.haveAllSubmittedFormsBeenManuallyApproved = co(function*({ application }) 
   )
 
   const employeeIds = verifiers
-    .map((user, i) => this.isEmployee(user) && verifierPermalinks[i])
+    .map((user, i) => this.isEmployee({user}) && verifierPermalinks[i])
     .filter(notNull)
 
   return formStubs.every(formStub =>
