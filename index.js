@@ -63,7 +63,7 @@ exports = module.exports = function createEmployeeManager (opts) {
 
 exports.isEmployee = isEmployee
 
-function isEmployee ({user, masterUser}) {
+function isEmployee ({ user, masterUser }) {
   let realUsers = [user, masterUser].filter(value => value)
   const { id } = buildResource.enumValue({
     model: roleModel,
@@ -203,7 +203,7 @@ proto._maybeForwardByContext = co(function*({ req }) {
   this.logger.debug(`found forward target candidate ${JSON.stringify(last)} by context ${context}`)
   const { _author } = last
   const candidate = yield bot.users.get(_author)
-  if (!this.isEmployee({user: candidate})) return
+  if (!this.isEmployee({ user: candidate })) return
 
   const type = req.message.object[TYPE]
   this.logger.debug('forwarding', {
@@ -302,7 +302,7 @@ proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
     return
   }
 
-  if (!this.isEmployee({user: recipient})) {
+  if (!this.isEmployee({ user: recipient })) {
     this.logger.debug(
       `refusing to forward: neither sender "${user.id}" nor recipient "${forward}" is an employee`
     )
@@ -360,13 +360,13 @@ proto._maybeAssignRM = co(function*({ req, assignment }) {
 
   // const relationshipManager = assignment._masterAuthor || getPermalinkFromStub(assignment.employee)
   const relationshipManager = getPermalinkFromStub(assignment.employee)
-  if (!applicant  &&  assignment.application) {
+  if (!applicant && assignment.application) {
     application = yield bot.getResource(assignment.application)
-    if (!application)
-      debugger
-    ({ applicant } = application)
+    // if (!application)
+    //   debugger
+    ;({ applicant } = application)
       applicant ={ id: applicant._permalink }
-      extend(req, {application, applicant})
+      extend(req, { application, applicant })
   }
   if (relationshipManager === applicant.id) {
     this.logger.debug(
@@ -623,8 +623,21 @@ proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, o
   if (from && !other.originalSender) {
     other.originalSender = from.id || from
   }
+  // return this.productsAPI.send({ req, to, object, other })
 
-  return this.productsAPI.send({ req, to, object, other })
+  return this.bot.getResource({ [TYPE]: IDENTITY, _permalink: to, link: to })
+    .then(result => {
+      let { pubkeys } = result
+      let employeeHashes = []
+      pubkeys.forEach(pkey => {
+        if (pkey.importedFrom)
+          employeeHashes.push(pkey.importedFrom)
+      })
+      if (!employeeHashes.length)
+        return this.productsAPI.send({ req, to, object, other })
+      return this.productsAPI.send({ req, to, object, other })
+      .then(() => Promise.all(employeeHashes.map(to => this.productsAPI.send({ req, to, object, other }))))
+    })
 }
 
 proto.hasEmployees = function hasEmployees () {
@@ -685,11 +698,12 @@ proto.assignRelationshipManager = co(function*({
   this.logger.debug(`assigning relationship manager ${rmID} to user ${applicant.id}`)
   const stub = getUserIdentityStub(relationshipManager)
 
-  let ownerHash
+  let masterUser, ownerHash
   if (assignment._masterAuthor)
     ownerHash = assignment._masterAuthor
   else
     ownerHash = stub._permalink
+
   const employee = yield this.bot.db.findOne({
     filter: {
       EQ: {
@@ -708,21 +722,48 @@ proto.assignRelationshipManager = co(function*({
   // application.relationshipManagers = rms
 
   const { context } = application
-  const promiseIntro = this.mutuallyIntroduce({
-    req,
-    a: applicant,
-    b: relationshipManager,
-    context
+
+  if (assignment._masterAuthor)
+    masterUser = yield bot.users.get(ownerHash)
+  else
+    masterUser = relationshipManager
+
+  const masterHash = masterUser.id
+
+  const masterIdentity = yield this.bot.addressBook.byPermalink(masterHash)
+  const pairedIdentities = []
+  masterIdentity.pubkeys.forEach(pub => {
+    if (pub.importedFrom) pairedIdentities.push(pub.importedFrom)
   })
 
-  const promiseSendVerification = productsAPI.send({
+  let pairedManagers
+  if (pairedIdentities.length)
+    pairedManagers = yield Promise.all(pairedIdentities.map(hash => bot.users.get(hash)))
+
+  let promises = []
+  if (pairedManagers)
+    promises = pairedManagers.map(rm =>
+      this.mutuallyIntroduce({
+        req,
+        a: applicant,
+        b: rm,
+        context
+      })
+    )
+
+  const mIntro = this.mutuallyIntroduce({
     req,
-    to: relationshipManager,
+    a: applicant,
+    b: masterUser,
+    context
+  })
+  const mVerification = productsAPI.send({
+    req,
+    to: masterUser,
     object: createVerificationForDocument(assignment),
     other: { context }
   })
-
-  yield [promiseIntro, promiseSendVerification]
+  yield [mIntro, mVerification].concat(pairedManagers || [])
 })
 // auto-approve first employee
 proto._onFormsCollected = co(function*({ req, user, application }) {
@@ -859,7 +900,7 @@ proto._didSend = co(function*(input, sentObject) {
   const employeePass = yield this.bot.getResource(analyst)
   let employee = employeePass.owner
   const { masterUser, user } = req
-  if (employee  &&  masterUser  &&  employee._permalink === masterUser.id)
+  if (employee && masterUser && employee._permalink === masterUser.id)
     employee = user.identity
 
   // yield relationshipManagers.map(co(function* (stub) {
@@ -924,7 +965,7 @@ proto.haveAllSubmittedFormsBeenManuallyApproved = co(function*({ application }) 
   )
 
   const employeeIds = verifiers
-    .map((user, i) => this.isEmployee({user}) && verifierPermalinks[i])
+    .map((user, i) => this.isEmployee({ user }) && verifierPermalinks[i])
     .filter(notNull)
 
   return formStubs.every(formStub =>
