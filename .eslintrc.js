@@ -26,7 +26,7 @@ module.exports = {
         "block-scoped-var": "error",
         "block-spacing": "error",
         "brace-style": [
-            "error",
+            "warn",
             "1tbs"
         ],
         "callback-return": "error",
@@ -148,7 +148,7 @@ module.exports = {
         "no-mixed-operators": "error",
         "no-mixed-requires": "error",
         "no-multi-assign": "warn",
-        "no-multi-spaces": "error",
+        "no-multi-spaces": "warn",
         "no-multi-str": "error",
         "no-multiple-empty-lines": "error",
         "no-native-reassign": "error",
