@@ -758,16 +758,22 @@ proto.assignRelationshipManager = co(function*({
     pairedManagers = yield Promise.all(pairedIdentities.map(hash => bot.users.get(hash)))
 
   let promises = []
-  if (pairedManagers)
-    promises = pairedManagers.map(rm =>
-      this.mutuallyIntroduce({
-        req,
-        a: applicant,
-        b: rm,
-        context
-      })
-    )
-
+  if (pairedManagers) {
+    pairedManagers.forEach(rm => {
+      promises.push(this.mutuallyIntroduce({
+          req,
+          a: applicant,
+          b: rm,
+          context
+        }))
+      promises.push(productsAPI.send({
+          req,
+          to: rm,
+          object: createVerificationForDocument(assignment),
+          other: { context }
+        }))
+    })
+  }
   const mIntro = this.mutuallyIntroduce({
     req,
     a: applicant,
