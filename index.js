@@ -265,7 +265,7 @@ proto._getLastInboundMessageByContext = co(function*({ user, context }) {
 
 proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
   const { bot } = this
-  const { user, message } = req
+  const { user, message, masterUser } = req
   const { object } = message
   const type = object[TYPE]
   if (this.isEmployee(req)) {
@@ -291,6 +291,23 @@ proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
     })
 
     yield this.forward({ req, to: forward })
+    let currentUser
+    let employeeHashes = []
+    if (masterUser) {
+      currentUser = masterUser
+      employeeHashes.push(masterUser.id)
+    }
+    else currentUser = user
+
+    let masterIdentity = yield bot.addressBook.byPermalink(currentUser.id)
+    let { pubkeys } = masterIdentity
+    pubkeys.forEach(pkey => {
+      if (pkey.importedFrom  &&  pkey.importedFrom !== user.id)
+        employeeHashes.push(pkey.importedFrom)
+    })
+    if (employeeHashes.length)
+      yield Promise.all(employeeHashes.map(hash => this.forward({ req, to: hash })))
+
     return
   }
 
