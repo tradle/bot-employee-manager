@@ -3,6 +3,7 @@ const pick = require('lodash/pick')
 const omit = require('lodash/omit')
 const clone = require('lodash/clone')
 const extend = require('lodash/extend')
+const uniqBy = require('lodash/uniqBy')
 
 const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
@@ -40,7 +41,8 @@ const {
   SIMPLE_MESSAGE,
   REQUEST_ERROR,
   CHECK_OVERRIDE,
-  CE_NOTIFICATION
+  CE_NOTIFICATION,
+  SELF_INTRODUCTION
 } = require('./types')
 
 const ACTION_TYPES = [ASSIGN_RM, VERIFICATION, APPROVAL, DENIAL]
@@ -522,7 +524,10 @@ proto._onmessage = co(function*(req) {
         return
       }
     }
-
+    if (type === SELF_INTRODUCTION || type === 'tradle.CustomerWaiting') {
+      yield this._maybeIntroToApplicants({ req, object })
+      return
+    }
     // assign relationship manager
     if (type === ASSIGN_RM) {
       yield this._maybeAssignRM({ req, assignment: object })
@@ -681,6 +686,65 @@ proto.list = proto.listEmployees = co(function*(opts = {}) {
   })
 
   return items || []
+})
+proto._maybeIntroToApplicants = co(function*({ req, object }) {
+  const { bot, productsAPI } = this
+  let { user, masterUser } = req
+  if (!this.isEmployee(req)  ||  !masterUser) {
+    this.logger.debug(
+      `refusing to intro to clients "${user.id}" is not an employee`
+    )
+    return
+  }
+  // const relationshipManager = assignment._masterAuthor || getPermalinkFromStub(assignment.employee)
+  const employee = yield this.bot.db.findOne({
+    filter: {
+      EQ: {
+        [TYPE]: 'tradle.MyEmployeeOnboarding',
+        'owner._permalink': masterUser.id
+      }
+    }
+  })
+
+  try {
+    const { items } = yield bot.db.find({
+      select: ['applicant', 'context', 'requestFor'],
+      filter: {
+        EQ: {
+          [TYPE]: APPLICATION,
+          'analyst._permalink': employee._permalink
+        }
+      },
+      orderBy: ORDER_BY_TIME_DESC
+    })
+    if (!items.length) return
+
+    yield this.introduceToApplicants(items, req)
+  } catch (err) {
+    this.logger.debug('failed to get applications by masterAuthor', {
+      error: err.stack,
+    })
+  }
+})
+proto.introduceToApplicants = co(function*(items, req) {
+  // const { productsAPI, bot } = this
+  const { user } = req
+
+  let applications  = uniqBy(items, 'applicant._permalink')
+
+  let applicants = yield applications.map(item => this.bot.users.get(item.applicant._permalink))
+  let contexts = applications.map(item => item.context)
+
+  let promises = []
+  applicants.forEach((applicant, i) => {
+    promises.push(this.mutuallyIntroduce({
+      req,
+      a: applicant,
+      b: user,
+      context: contexts[i]
+    }))
+  })
+  return yield promises
 })
 
 proto.assignRelationshipManager = co(function*({
