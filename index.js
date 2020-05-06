@@ -524,7 +524,7 @@ proto._onmessage = co(function*(req) {
         return
       }
     }
-    if (type === SELF_INTRODUCTION || type === 'tradle.CustomerWaiting') {
+    if (type === SELF_INTRODUCTION) {
       yield this._maybeIntroToApplicants({ req, object })
       return
     }
