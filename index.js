@@ -41,8 +41,7 @@ const {
   SIMPLE_MESSAGE,
   REQUEST_ERROR,
   CHECK_OVERRIDE,
-  CE_NOTIFICATION,
-  SELF_INTRODUCTION
+  CE_NOTIFICATION
 } = require('./types')
 
 const ACTION_TYPES = [ASSIGN_RM, VERIFICATION, APPROVAL, DENIAL]
@@ -524,10 +523,6 @@ proto._onmessage = co(function*(req) {
         return
       }
     }
-    if (type === SELF_INTRODUCTION) {
-      // yield this.introduceToOtherDevices({ req, object })
-      return
-    }
     // assign relationship manager
     if (type === ASSIGN_RM) {
       yield this._maybeAssignRM({ req, assignment: object })
@@ -686,64 +681,6 @@ proto.list = proto.listEmployees = co(function*(opts = {}) {
   })
 
   return items || []
-})
-proto.introduceToOtherDevices = co(function*({ req, object }) {
-  const { bot, productsAPI } = this
-  let { user, masterUser } = req
-  if (!this.isEmployee(req)  ||  !masterUser) {
-    this.logger.debug(
-      `refusing to intro to clients "${user.id}" is not an employee`
-    )
-    return
-  }
-
-debugger
-  const employee = yield this.bot.db.findOne({
-    filter: {
-      EQ: {
-        [TYPE]: 'tradle.MyEmployeeOnboarding',
-        'owner._permalink': masterUser.id
-      }
-    },
-    orderBy: ORDER_BY_TIME_DESC
-  })
-  let context
-  try {
-    const app = yield bot.db.findOne({
-      select: ['context'],
-      filter: {
-        EQ: {
-          [TYPE]: APPLICATION,
-          'analyst._permalink': employee._permalink
-        }
-      }
-    })
-    if (!app) return
-    context = app.context
-  } catch (err) {
-    this.logger.debug('failed to get applications by masterAuthor', {
-      error: err.stack,
-    })
-    return
-  }
-  const masterIdentity = yield this.bot.addressBook.byPermalink(masterUser.id)
-  const pairedIdentities = []
-  masterIdentity.pubkeys.forEach(pub => {
-    if (pub.importedFrom  &&  pub.importedFrom !== user.id) pairedIdentities.push(pub.importedFrom)
-  })
-
-  let pairedManagers
-  if (pairedIdentities.length)
-    pairedManagers = yield Promise.all(pairedIdentities.map(hash => bot.users.get(hash)))
-  pairedManagers = [masterUser].concat(pairedManagers || [])
-
-  return yield Promise.all(pairedManagers.map(otherUser =>
-    this.mutuallyIntroduce({
-      req,
-      a: user,
-      b: otherUser,
-      context
-    })))
 })
 
 proto.assignRelationshipManager = co(function*({
