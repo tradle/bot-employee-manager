@@ -525,7 +525,7 @@ proto._onmessage = co(function*(req) {
       }
     }
     if (type === SELF_INTRODUCTION) {
-      yield this._maybeIntroToApplicants({ req, object })
+      // yield this.introduceToOtherDevices({ req, object })
       return
     }
     // assign relationship manager
@@ -687,7 +687,7 @@ proto.list = proto.listEmployees = co(function*(opts = {}) {
 
   return items || []
 })
-proto._maybeIntroToApplicants = co(function*({ req, object }) {
+proto.introduceToOtherDevices = co(function*({ req, object }) {
   const { bot, productsAPI } = this
   let { user, masterUser } = req
   if (!this.isEmployee(req)  ||  !masterUser) {
@@ -696,55 +696,54 @@ proto._maybeIntroToApplicants = co(function*({ req, object }) {
     )
     return
   }
-  // const relationshipManager = assignment._masterAuthor || getPermalinkFromStub(assignment.employee)
+
+debugger
   const employee = yield this.bot.db.findOne({
     filter: {
       EQ: {
         [TYPE]: 'tradle.MyEmployeeOnboarding',
         'owner._permalink': masterUser.id
       }
-    }
+    },
+    orderBy: ORDER_BY_TIME_DESC
   })
-
+  let context
   try {
-    const { items } = yield bot.db.find({
-      select: ['applicant', 'context', 'requestFor'],
+    const app = yield bot.db.findOne({
+      select: ['context'],
       filter: {
         EQ: {
           [TYPE]: APPLICATION,
           'analyst._permalink': employee._permalink
         }
-      },
-      orderBy: ORDER_BY_TIME_DESC
+      }
     })
-    if (!items.length) return
-
-    yield this.introduceToApplicants(items, req)
+    if (!app) return
+    context = app.context
   } catch (err) {
     this.logger.debug('failed to get applications by masterAuthor', {
       error: err.stack,
     })
+    return
   }
-})
-proto.introduceToApplicants = co(function*(items, req) {
-  // const { productsAPI, bot } = this
-  const { user } = req
-
-  let applications  = uniqBy(items, 'applicant._permalink')
-
-  let applicants = yield applications.map(item => this.bot.users.get(item.applicant._permalink))
-  let contexts = applications.map(item => item.context)
-
-  let promises = []
-  applicants.forEach((applicant, i) => {
-    promises.push(this.mutuallyIntroduce({
-      req,
-      a: applicant,
-      b: user,
-      context: contexts[i]
-    }))
+  const masterIdentity = yield this.bot.addressBook.byPermalink(masterUser.id)
+  const pairedIdentities = []
+  masterIdentity.pubkeys.forEach(pub => {
+    if (pub.importedFrom  &&  pub.importedFrom !== user.id) pairedIdentities.push(pub.importedFrom)
   })
-  return yield promises
+
+  let pairedManagers
+  if (pairedIdentities.length)
+    pairedManagers = yield Promise.all(pairedIdentities.map(hash => bot.users.get(hash)))
+  pairedManagers = [masterUser].concat(pairedManagers || [])
+
+  return yield Promise.all(pairedManagers.map(otherUser =>
+    this.mutuallyIntroduce({
+      req,
+      a: user,
+      b: otherUser,
+      context
+    })))
 })
 
 proto.assignRelationshipManager = co(function*({
