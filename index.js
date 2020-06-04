@@ -1,15 +1,13 @@
 const co = require('co').wrap
 const pick = require('lodash/pick')
-const omit = require('lodash/omit')
 const clone = require('lodash/clone')
 const extend = require('lodash/extend')
-const uniqBy = require('lodash/uniqBy')
 
 const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
 const { buildResourceStub, title } = require('@tradle/build-resource')
 
-const { parseId, parseStub, omitVirtual } = require('@tradle/validate-resource').utils
+const { parseStub } = require('@tradle/validate-resource').utils
 const models = require('./models')
 const {
   debug,
@@ -28,28 +26,38 @@ const PACKAGE_NAME = require('./package').name
 const {
   EMPLOYEE_ONBOARDING,
   EMPLOYEE_PASS,
+  PUB_KEY,
   ASSIGN_RM,
   APPROVAL,
   DENIAL,
   IDENTITY,
+  IDENTITY_PUBLISH_REQUEST,
   INTRODUCTION,
   SHARE_REQUEST,
   VERIFICATION,
   APPLICATION,
+  APPLICATION_SUBMITTED,
   FORM_REQUEST,
   FORM_ERROR,
+  PRODUCT_REQUEST,
+  MESSAGE,
   SIMPLE_MESSAGE,
   REQUEST_ERROR,
   CHECK_OVERRIDE,
+  CUSTOMER_WAITING,
+  SELF_INTRODUCTION,
+  DEVICE_SYNC,
+  DEVICE_SYNC_DATA_BUNDLE,
   CE_NOTIFICATION
 } = require('./types')
 
 const ACTION_TYPES = [ASSIGN_RM, VERIFICATION, APPROVAL, DENIAL]
+const INTRO_TYPES = [CUSTOMER_WAITING, SELF_INTRODUCTION, INTRODUCTION, IDENTITY_PUBLISH_REQUEST]
 
 const notNull = x => x != null
-const assignRMModel = models[ASSIGN_RM]
 const roleModel = require('@tradle/models-products-bot')['tradle.products.Role']
 const isActionType = type => ACTION_TYPES.includes(type)
+const isIntroType = type => INTRO_TYPES.includes(type)
 const RESOLVED = Promise.resolve()
 // const createAssignRMModel = require('./assign-rm-model')
 const alwaysTrue = () => true
@@ -94,7 +102,6 @@ function EmployeeManager ({
   this._shouldForwardToEmployee = shouldForwardToEmployee
   this._shouldForwardFromEmployee = shouldForwardFromEmployee
   // const assignRMModel = createAssignRMModel({ productsAPI })
-
   this.bot = bot
   this._pluginSubscriptions = []
   this._handlingMessages = false
@@ -141,9 +148,9 @@ proto.handleMessages = function handleMessages (handle = true) {
   ]
 }
 
-proto._deduceApplication = co(function*(req) {
+proto._deduceApplication = co(function*(req, forceAction) {
   const { message = {} } = req
-  if (!this.isEmployee(req)) return
+  if (!this.isEmployee(req)  &&  !forceAction) return
 
   const { context, forward, object } = message
   const type = object[TYPE]
@@ -157,7 +164,7 @@ proto._deduceApplication = co(function*(req) {
     return yield this.productsAPI.getApplicationByStub(object.application)
   }
 
-  const isAction = isActionType(type)
+  const isAction = forceAction || isActionType(type)
   if (forward && !isAction) {
     // ignore
     return false
@@ -166,7 +173,7 @@ proto._deduceApplication = co(function*(req) {
   if (!(context && isAction)) return
 
   try {
-    return yield this.bot.db.findOne({
+    let { items } = yield this.bot.db.find({
       filter: {
         EQ: {
           [TYPE]: APPLICATION,
@@ -175,6 +182,12 @@ proto._deduceApplication = co(function*(req) {
       },
       orderBy: ORDER_BY_TIME_DESC
     })
+    let application
+    if (!items.length)
+      return
+    application = yield this.bot.getResource(items[0], { backlinks: ['submissions'] })
+    this.productsAPI.state.organizeSubmissions(application)
+    return application
   } catch (err) {
     this.logger.debug('failed to get application by context', {
       error: err.stack,
@@ -182,7 +195,6 @@ proto._deduceApplication = co(function*(req) {
     })
   }
 })
-
 /**
  * Attempt to detect the employee to forward the message to based on the "context"
  *
@@ -252,7 +264,7 @@ proto._getLastInboundMessageByContext = co(function*({ user, context }) {
     select: ['_author'],
     filter: {
       EQ: {
-        [TYPE]: 'tradle.Message',
+        [TYPE]: MESSAGE,
         context,
         _inbound: true
       },
@@ -290,24 +302,21 @@ proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
       author: user.id,
       recipient: forward
     })
+    const other = { originalSender: user.id }
+    // forward to all employee devices
+    // yield this.forward({ req, to: forward })
+    let employeeHashes = yield this._getPairedIdentitiesHashes(req)
+    employeeHashes = [forward].concat(employeeHashes)
+    // if (employeeHashes.length)
+      // yield Promise.all(employeeHashes.map(hash => req.sendQueue.push({ req, to:hash, object, other })))
+    yield Promise.all(employeeHashes.map(hash => this.forward({ req, to: hash })))
 
-    yield this.forward({ req, to: forward })
-    let currentUser
-    let employeeHashes = []
-    if (masterUser) {
-      currentUser = masterUser
-      employeeHashes.push(masterUser.id)
-    }
-    else currentUser = user
-
-    let masterIdentity = yield bot.addressBook.byPermalink(currentUser.id)
-    let { pubkeys } = masterIdentity
-    pubkeys.forEach(pkey => {
-      if (pkey.importedFrom  &&  pkey.importedFrom !== user.id)
-        employeeHashes.push(pkey.importedFrom)
-    })
-    if (employeeHashes.length)
-      yield Promise.all(employeeHashes.map(hash => this.forward({ req, to: hash })))
+    // forward to all client devices
+    let pairedIdentities = yield this.getOtherClientIdentities({ id: forward })
+    if (pairedIdentities.length)
+      req.clientIdentities = pairedIdentities
+      // yield Promise.all(pairedIdentities.map(hash => req.sendQueue.push({ req, to:hash, object, other })))
+      yield Promise.all(pairedIdentities.map(hash => this.forward({ req, to: hash })))
 
     return
   }
@@ -349,6 +358,28 @@ proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
     to: forward
   })
   // yield this.forward({ req, to: forward })
+})
+proto.getOtherClientIdentities = co(function*({ id })  {
+  let clientIdentity = yield this.bot.addressBook.byPermalink(id)
+  let pairedIdentities = []
+  clientIdentity.pubkeys.forEach(pub => {
+    if (pub.importedFrom) pairedIdentities.push(pub.importedFrom)
+  })
+  if (pairedIdentities.length)  return pairedIdentities
+  let pubKey = yield this.bot.db.findOne({
+    filter: {
+      EQ: {
+        [TYPE]: PUB_KEY,
+        importedFrom: id
+      }
+    }
+  })
+  if (!pubKey) return pairedIdentities
+  clientIdentity = yield this.bot.addressBook.byPermalink(pubKey.permalink)
+  clientIdentity.pubkeys.forEach(pub => {
+    if (pub.importedFrom  &&  pub.importedFrom !== id) pairedIdentities.push(pub.importedFrom)
+  })
+  return [clientIdentity._permalink].concat(pairedIdentities)
 })
 
 proto.forward = co(function*({ req, to }) {
@@ -493,7 +524,7 @@ proto.approveOrDeny = co(function*({ req, judge, applicant, application, judgmen
 })
 
 proto._onmessage = co(function*(req) {
-  let { user, application, applicant, message } = req
+  let { user, masterUser, allUsers, application, applicant, message } = req
   this.logger.debug(
     'processing message, custom props:',
     pick(message, ['originalSender', 'forward'])
@@ -505,33 +536,30 @@ proto._onmessage = co(function*(req) {
 
   let isEmployee = this.isEmployee(req)
   if (isEmployee) {
-    if (application) {
-      if (type === APPROVAL || type === DENIAL) {
-        yield this.approveOrDeny({
-          req,
-          judge: user,
-          applicant,
-          application,
-          judgment: object
-        })
-
+    let { done, stop } = yield this._checkForEmployee(req)
+    if (done) return
+    if (stop) return false
+  }
+  else if (!isIntroType(type)) {
+    let pairedIdentities = yield this._getPairedIdentitiesHashes(req)
+    if (pairedIdentities.length) {
+      if (type === DEVICE_SYNC) {
+        if (!masterUser) return
+        // debugger
+        let bundle = yield this._getSyncBundle({ masterUser, user, allUsers })
+        this.logger.debug(`Sending ${DEVICE_SYNC_DATA_BUNDLE} to ${user.id}: ${bundle.items.map(item => item[TYPE])}`)
+        yield this.bot.send({ to: user.id, object: bundle })
         return
       }
-
-      if (type === VERIFICATION) {
-        // defer to bot-products to import
-        return
+      if (!application) {
+        application = yield this._deduceApplication(req, true)
+        if (application)
+          req.application = application
       }
-    }
-    // assign relationship manager
-    if (type === ASSIGN_RM) {
-      yield this._maybeAssignRM({ req, assignment: object })
-      return
-    }
 
-    if (type === SHARE_REQUEST) {
-      yield this._onShareRequest({ req })
-      return
+      yield Promise.all(pairedIdentities.map((to, i) => {
+        this.forward({ req, to })
+      }))
     }
   }
 
@@ -557,6 +585,7 @@ proto._onmessage = co(function*(req) {
   const employeePass = yield this.bot.getResource(analyst)
   const employee = employeePass.owner
 
+
   // yield relationshipManagers.map(co(function* (stub) {
   yield [employee].map(
     co(function*(stub) {
@@ -577,7 +606,77 @@ proto._onmessage = co(function*(req) {
     }).bind(this)
   )
 })
+proto._checkForEmployee = co(function* (req) {
+  let { user, masterUser, application, applicant, message } = req
+  const { object } = message
+  const type = object[TYPE]
 
+  if (application) {
+    if (type === APPROVAL || type === DENIAL) {
+      yield this.approveOrDeny({
+        req,
+        judge: user,
+        applicant,
+        application,
+        judgment: object
+      })
+
+      return { done: true }
+    }
+
+    if (type === VERIFICATION) {
+      // defer to bot-products to import
+      return { done: true }
+    }
+  }
+  // assign relationship manager
+  if (type === ASSIGN_RM) {
+    yield this._maybeAssignRM({ req, assignment: object })
+    return { done: true }
+  }
+
+  if (type === SHARE_REQUEST) {
+    yield this._onShareRequest({ req })
+    return { done: true }
+  }
+  // Employee communicates with the client only inside some client application
+  if (!application) {
+    application = yield this._deduceApplication(req, true)
+    if (!application) return { done: true }
+    req.application = application
+  }
+  if (!application.analyst) return { stop: true }
+
+  const analyst = yield this.bot.getResource(application.analyst)
+  const analystID = analyst.owner._permalink
+  if (masterUser) {
+    if (masterUser.id !== analystID) return { done: true }
+  }
+  else if (user.id !== analystID) return { done: true }
+  return {}
+})
+proto._getSyncBundle = co(function* ({ masterUser, user, allUsers }) {
+  let applications = []
+  if (allUsers) {
+    allUsers.forEach(u => applications.push(...u.applications))
+    applications.sort((a, b) => a.started - b.started)
+  }
+  let appSubmissions = yield Promise.all(applications.map(app => this.bot.getResource({ permalink: app.statePermalink, type: APPLICATION }, { backlinks: ['submissions'] })))
+  let submissions = appSubmissions.reduce((a, b) => {
+    return a.concat(b.submissions)
+  }, [])
+  submissions.sort((a, b) => a._time - b._time)
+  let forms = yield Promise.all(submissions.map(s => this.bot.getResource(s.submission)))
+
+  forms.forEach((form, i) => {
+    if (!form.contextId  &&  !form.context)
+      form._contextId = submissions[i].context
+  })
+  let bundle = yield this.bot.draft({ type: DEVICE_SYNC_DATA_BUNDLE }).set({
+    items: { items: forms }
+  }).signAndSave()
+  return yield bundle.toJSON()
+})
 proto._onShareRequest = function ({ req }) {
   const { user, object, message } = req
   this.logger.debug(`processing ${SHARE_REQUEST}`, object)
@@ -645,15 +744,13 @@ proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, o
   return this.bot.getResource({ [TYPE]: IDENTITY, _permalink: to, link: to })
     .then(result => {
       let { pubkeys } = result
-      let employeeHashes = []
+      let employeeHashes = [to]
       pubkeys.forEach(pkey => {
-        if (pkey.importedFrom)
+        if (pkey.importedFrom  &&  pkey.importedFrom !== to)
           employeeHashes.push(pkey.importedFrom)
       })
-      if (!employeeHashes.length)
-        return this.productsAPI.send({ req, to, object, other })
-      return this.productsAPI.send({ req, to, object, other })
-      .then(() => Promise.all(employeeHashes.map(to => this.productsAPI.send({ req, to, object, other }))))
+
+      return Promise.all(employeeHashes.map(to => this.productsAPI.send({ req, to, object, other })))
     })
 }
 
@@ -724,7 +821,7 @@ proto.assignRelationshipManager = co(function*({
   const employee = yield this.bot.db.findOne({
     filter: {
       EQ: {
-        [TYPE]: 'tradle.MyEmployeeOnboarding',
+        [TYPE]: EMPLOYEE_PASS,
         'owner._permalink': ownerHash
       }
     }
@@ -745,17 +842,7 @@ proto.assignRelationshipManager = co(function*({
   else
     masterUser = relationshipManager
 
-  const masterHash = masterUser.id
-
-  const masterIdentity = yield this.bot.addressBook.byPermalink(masterHash)
-  const pairedIdentities = []
-  masterIdentity.pubkeys.forEach(pub => {
-    if (pub.importedFrom) pairedIdentities.push(pub.importedFrom)
-  })
-
-  let pairedManagers
-  if (pairedIdentities.length)
-    pairedManagers = yield Promise.all(pairedIdentities.map(hash => bot.users.get(hash)))
+  const pairedManagers = yield this._getPairedUsers(masterUser)
 
   let promises = []
   if (pairedManagers) {
@@ -788,6 +875,7 @@ proto.assignRelationshipManager = co(function*({
   })
   yield [mIntro, mVerification].concat(pairedManagers || [])
 })
+
 // auto-approve first employee
 proto._onFormsCollected = co(function*({ req, user, application }) {
   if (this.isEmployee(req) || application.requestFor !== EMPLOYEE_ONBOARDING) {
@@ -901,32 +989,49 @@ proto._willSend = function _willSend (opts) {
 // forward any messages sent by the bot
 // to relationship managers
 proto._didSend = co(function*(input, sentObject) {
-  if (sentObject[TYPE] === INTRODUCTION) return
+  const soType = sentObject[TYPE]
+  if (soType === INTRODUCTION) return
 
   const { req, to, application } = input
   if (!application) return
 
-  // const { relationshipManagers } = application
-  // if (!(relationshipManagers && relationshipManagers.length)) return
+  const originalRecipient = to.id || to
+  if (originalRecipient !== getPermalinkFromStub(application.applicant)) {
+    if (!this._isMyIdentity(req)) return
+  }
+  const other = clone(input.other || {})
+  other.originalRecipient = originalRecipient
+  const { user, masterUser } = req
+  let isEmployee = this.isEmployee({ user, masterUser })
+  if (isEmployee) return
+  if (soType === FORM_REQUEST    ||
+      soType === FORM_ERROR      ||
+      soType === APPROVAL        ||
+      soType === DENIAL          ||
+      soType === PRODUCT_REQUEST ||
+      soType === APPLICATION_SUBMITTED) {
+    let pairedHashes = yield this._getPairedIdentitiesHashes(req)
+    if (pairedHashes.length)
+      pairedHashes.forEach(to => req.sendQueue.push({ req, to, object: sentObject, other }))
+  }
+  else {
+    // debugger
+    return
+  }
 
   const { analyst } = application
   if (!analyst) return
 
-  const originalRecipient = to.id || to
-  if (originalRecipient !== getPermalinkFromStub(application.applicant)) {
-    return
-  }
+  // const originalRecipient = to.id || to
+  // if (originalRecipient !== getPermalinkFromStub(application.applicant)) {
+  //   return
+  // }
 
-  const other = clone(input.other || {})
-  other.originalRecipient = originalRecipient
+  // const other = clone(input.other || {})
+  // other.originalRecipient = originalRecipient
 
   const employeePass = yield this.bot.getResource(analyst)
   let employee = employeePass.owner
-  const { masterUser, user } = req
-  if (employee && masterUser && employee._permalink === masterUser.id)
-    employee = user.identity
-
-  // yield relationshipManagers.map(co(function* (stub) {
   yield [employee].map(
     co(function*(stub) {
       const userId = getPermalinkFromStub(stub)
@@ -943,16 +1048,21 @@ proto._didSend = co(function*(input, sentObject) {
         recipient: userId,
         originalRecipient: other.originalRecipient
       })
+      let employeeHashes = yield this._getEmployeeDevicesHashes(stub)
+      let idx = employeeHashes.indexOf(req.user.id)
+      if (idx !== -1)
+        employeeHashes.splice(idx, 1)
+      // debugger
+      ;[userId].concat(employeeHashes).map(to => req.sendQueue.push({ req, to, object: sentObject, other }))
+    }).bind(this))
 
-      // nothing to unwrap here, this is an original from our bot
-      yield this.forwardToEmployee({
-        req,
-        other,
-        object: sentObject,
-        to: userId
-      })
-    }).bind(this)
-  )
+  return false
+})
+
+proto._getEmployeeDevicesHashes = co(function*(stub) {
+  let masterEmployeeIdentity = yield this.bot.addressBook.byPermalink(stub._permalink)
+  let pairedPubs = masterEmployeeIdentity.pubkeys.filter(pub => pub.importedFrom)
+  return pairedPubs.length ? pairedPubs.map(pub => pub.importedFrom) : []
 })
 
 proto._addEmployeeRole = function _addEmployeeRole (user) {
@@ -996,4 +1106,29 @@ proto.haveAllSubmittedFormsBeenManuallyApproved = co(function*({ application }) 
       .filter(v => parseStub(v.document).link === formStub.link)
       .find(({ _verifiedBy }) => employeeIds.includes(_verifiedBy))
   )
+})
+proto._getPairedUsers = co(function*(masterUser) {
+  const masterHash = masterUser.identity._permalink
+  if (!masterHash) return
+  const masterIdentity = yield this.bot.addressBook.byPermalink(masterHash)
+  let pairedIdentities = []
+  masterIdentity.pubkeys.forEach(pub => {
+    if (pub.importedFrom) pairedIdentities.push(pub.importedFrom)
+  })
+  if (pairedIdentities.length)
+    return yield Promise.all(pairedIdentities.map(hash => this.bot.users.get(hash)))
+})
+proto._getPairedIdentitiesHashes = co(function*(req) {
+  const { user, masterUser, allUsers } = req
+  let hashes = []
+  if (allUsers)
+    allUsers.forEach(u => {
+      if (u.id !== user.id) hashes.push(u.id)
+    })
+  return hashes
+})
+proto._isMyIdentity = co(function*(req) {
+  const { masterUser, allUsers, user } = req
+  if (!masterUser) return false
+  return allUsers && allUsers.some(u => user.id === u.id)
 })

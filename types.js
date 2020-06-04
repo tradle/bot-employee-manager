@@ -1,19 +1,27 @@
 module.exports = {
   EMPLOYEE_ONBOARDING: 'tradle.EmployeeOnboarding',
   EMPLOYEE_PASS: 'tradle.MyEmployeeOnboarding',
+  PUB_KEY: 'tradle.PubKey',
   ASSIGN_RM: 'tradle.AssignRelationshipManager',
   APPROVAL: 'tradle.ApplicationApproval',
   DENIAL: 'tradle.ApplicationDenial',
   IDENTITY: 'tradle.Identity',
+  IDENTITY_PUBLISH_REQUEST: 'tradle.IdentityPublishRequest',
   INTRODUCTION: 'tradle.Introduction',
   SHARE_REQUEST: 'tradle.ShareRequest',
   VERIFICATION: 'tradle.Verification',
   APPLICATION: 'tradle.Application',
+  APPLICATION_SUBMITTED: 'tradle.ApplicationSubmitted',
   OBJECT: 'tradle.Object',
   FORM_REQUEST: 'tradle.FormRequest',
   FORM_ERROR: 'tradle.FormError',
   SIMPLE_MESSAGE: 'tradle.SimpleMessage',
+  MESSAGE: 'tradle.Message',
   REQUEST_ERROR: 'tradle.RequestError',
   CHECK_OVERRIDE: 'tradle.CheckOverride',
-  SELF_INTRODUCTION: 'tradle.SelfIntroduction'
+  DEVICE_SYNC: 'tradle.DeviceSync',
+  DEVICE_SYNC_DATA_BUNDLE: 'tradle.DeviceSyncDataBundle',
+  SELF_INTRODUCTION: 'tradle.SelfIntroduction',
+  CUSTOMER_WAITING: 'tradle.CustomerWaiting',
+  PRODUCT_REQUEST: 'tradle.ProductRequest'
 }
