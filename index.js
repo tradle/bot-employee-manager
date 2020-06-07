@@ -2,6 +2,7 @@ const co = require('co').wrap
 const pick = require('lodash/pick')
 const clone = require('lodash/clone')
 const extend = require('lodash/extend')
+const allSettled = require('settle-promise').settle
 
 const { TYPE, SIG } = require('@tradle/constants')
 const buildResource = require('@tradle/build-resource')
@@ -547,7 +548,8 @@ proto._onmessage = co(function*(req) {
         if (!masterUser) return
         // debugger
         let bundle = yield this._getSyncBundle({ masterUser, user, allUsers })
-        this.logger.debug(`Sending ${DEVICE_SYNC_DATA_BUNDLE} to ${user.id}: ${bundle.items.map(item => item[TYPE])}`)
+        let { items } = bundle.items
+        this.logger.debug(`Sending ${DEVICE_SYNC_DATA_BUNDLE} to ${user.id}: ${items.map(item => item[TYPE])}`)
         yield this.bot.send({ to: user.id, object: bundle })
         return
       }
@@ -1115,8 +1117,10 @@ proto._getPairedUsers = co(function*(masterUser) {
   masterIdentity.pubkeys.forEach(pub => {
     if (pub.importedFrom) pairedIdentities.push(pub.importedFrom)
   })
-  if (pairedIdentities.length)
-    return yield Promise.all(pairedIdentities.map(hash => this.bot.users.get(hash)))
+  if (pairedIdentities.length) {
+    let result = yield allSettled(pairedIdentities.map(hash => this.bot.users.get(hash)))
+    return result.filter(item => item.isFulfilled).map(item => item.value)
+  }
 })
 proto._getPairedIdentitiesHashes = co(function*(req) {
   const { user, masterUser, allUsers } = req
