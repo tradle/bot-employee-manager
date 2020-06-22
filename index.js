@@ -51,6 +51,7 @@ const {
   DEVICE_SYNC_DATA_BUNDLE,
   CE_NOTIFICATION
 } = require('./types')
+const { MY_PRODUCT } = require('@tradle/bot-products/types')
 
 const ACTION_TYPES = [ASSIGN_RM, VERIFICATION, APPROVAL, DENIAL]
 const INTRO_TYPES = [CUSTOMER_WAITING, SELF_INTRODUCTION, INTRODUCTION, IDENTITY_PUBLISH_REQUEST]
@@ -367,16 +368,21 @@ proto.getOtherClientIdentities = co(function*({ id })  {
     if (pub.importedFrom) pairedIdentities.push(pub.importedFrom)
   })
   if (pairedIdentities.length)  return pairedIdentities
-  let pubKey = yield this.bot.db.findOne({
-    filter: {
-      EQ: {
-        [TYPE]: PUB_KEY,
-        importedFrom: id
+  let pubKey
+  try {
+    pubKey = yield this.bot.db.findOne({
+      filter: {
+        EQ: {
+          [TYPE]: PUB_KEY,
+          importedFrom: id
+        }
       }
-    }
-  })
+    })
+  } catch (err) {
+    // debugger
+  }
   if (!pubKey) return pairedIdentities
-  clientIdentity = yield this.bot.addressBook.byPermalink(pubKey.permalink)
+  clientIdentity = yield this.bot.addressBook.byPermalink(pubKey.permalink || pubKey.owner._permalink)
   clientIdentity.pubkeys.forEach(pub => {
     if (pub.importedFrom  &&  pub.importedFrom !== id) pairedIdentities.push(pub.importedFrom)
   })
@@ -666,7 +672,8 @@ proto._getSyncBundle = co(function* ({ masterUser, user, allUsers }) {
   let appSubmissions = yield Promise.all(applications.map(app => this.bot.getResource({ permalink: app.statePermalink, type: APPLICATION }, { backlinks: ['submissions'] })))
   let submissions = appSubmissions.reduce((a, b) => {
     return a.concat(b.submissions)
-  }, [])
+  }, []).filter(s => s.submission[TYPE] !== VERIFICATION)
+
   submissions.sort((a, b) => a._time - b._time)
   let forms = yield Promise.all(submissions.map(s => this.bot.getResource(s.submission)))
 
@@ -814,9 +821,11 @@ proto.assignRelationshipManager = co(function*({
   this.logger.debug(`assigning relationship manager ${rmID} to user ${applicant.id}`)
   const stub = getUserIdentityStub(relationshipManager)
 
-  let masterUser, ownerHash
-  if (assignment._masterAuthor)
-    ownerHash = assignment._masterAuthor
+  const { masterUser, user, allUsers } = req
+
+  let ownerHash
+  if (masterUser)
+    ownerHash = masterUser.id
   else
     ownerHash = stub._permalink
 
@@ -839,15 +848,27 @@ proto.assignRelationshipManager = co(function*({
 
   const { context } = application
 
-  if (assignment._masterAuthor)
-    masterUser = yield bot.users.get(ownerHash)
-  else
-    masterUser = relationshipManager
-
-  const pairedManagers = yield this._getPairedUsers(masterUser)
-
   let promises = []
-  if (pairedManagers) {
+  promises.push(this.mutuallyIntroduce({
+    req,
+    a: applicant,
+    b: user,
+    context
+  }))
+  promises.push(productsAPI.send({
+    req,
+    to: user,
+    object: createVerificationForDocument(assignment),
+    other: { context }
+  }))
+/*
+  let idx = allUsers ? allUsers.findIndex(u => u.id !== user.id) : -1
+
+  let pairedManagers
+  if (idx !== -1)
+    pairedManageres = allUsers.slice().splice(idx, 1)
+
+  if (pairedManagers  &&  pairedManagers.length) {
     pairedManagers.forEach(rm => {
       promises.push(this.mutuallyIntroduce({
           req,
@@ -855,27 +876,37 @@ proto.assignRelationshipManager = co(function*({
           b: rm,
           context
         }))
-      promises.push(productsAPI.send({
-          req,
-          to: rm,
-          object: createVerificationForDocument(assignment),
-          other: { context }
-        }))
+      // promises.push(productsAPI.send({
+      //     req,
+      //     to: rm,
+      //     object: createVerificationForDocument(assignment),
+      //     other: { context }
+      //   }))
     })
   }
-  const mIntro = this.mutuallyIntroduce({
-    req,
-    a: applicant,
-    b: masterUser,
-    context
+
+  let clientHashes =  yield this.getOtherClientIdentities({ id: applicant.id })
+  clientHashes.forEach(hash => {
+    promises.push(this.mutuallyIntroduce({
+      req,
+      a: hash,
+      b: user,
+      context
+    }))
+    if (pairedManagers) {
+      debugger
+      pairedManagers.forEach(ehash => {
+        promises.push(this.mutuallyIntroduce({
+          req,
+          a: hash,
+          b: ehash,
+          context
+        }))
+      })
+    }
   })
-  const mVerification = productsAPI.send({
-    req,
-    to: masterUser,
-    object: createVerificationForDocument(assignment),
-    other: { context }
-  })
-  yield [mIntro, mVerification].concat(pairedManagers || [])
+  */
+  yield Promise.all(promises)
 })
 
 // auto-approve first employee
@@ -1005,13 +1036,18 @@ proto._didSend = co(function*(input, sentObject) {
   other.originalRecipient = originalRecipient
   const { user, masterUser } = req
   let isEmployee = this.isEmployee({ user, masterUser })
-  if (isEmployee) return
+  if (isEmployee) {
+    this._didSendToEmployee({ sentObject, req, other })
+    return
+  }
   if (soType === FORM_REQUEST    ||
       soType === FORM_ERROR      ||
       soType === APPROVAL        ||
       soType === DENIAL          ||
       soType === PRODUCT_REQUEST ||
-      soType === APPLICATION_SUBMITTED) {
+      soType === APPLICATION_SUBMITTED ||
+      // check of the message is sent from server like 'Application is in review'
+      (soType === SIMPLE_MESSAGE  &&  sentObject._author !== user.id)) {
     let pairedHashes = yield this._getPairedIdentitiesHashes(req)
     if (pairedHashes.length)
       pairedHashes.forEach(to => req.sendQueue.push({ req, to, object: sentObject, other }))
@@ -1060,11 +1096,32 @@ proto._didSend = co(function*(input, sentObject) {
 
   return false
 })
+proto._didSendToEmployee = co(function*({ sentObject, req, other }) {
+  const soType = sentObject[TYPE]
+  let model = this.bot.models[soType]
+  let forwardToClient
+  if (model.id === VERIFICATION) {
+    if (sentObject.document[TYPE] !== ASSIGN_RM)
+      forwardToClient = true
 
-proto._getEmployeeDevicesHashes = co(function*(stub) {
-  let masterEmployeeIdentity = yield this.bot.addressBook.byPermalink(stub._permalink)
-  let pairedPubs = masterEmployeeIdentity.pubkeys.filter(pub => pub.importedFrom)
-  return pairedPubs.length ? pairedPubs.map(pub => pub.importedFrom) : []
+    // let employeeHashes = yield this._getPairedIdentitiesHashes(req)
+    // let { user } = req
+    // let idx = employeeHashes.indexOf(user.id)
+    // if (idx !== -1)
+    //   employeeHashes.splice(idx, 1)
+    // if (employeeHashes.length)
+    //   employeeHashes.forEach(to => req.sendQueue.push({ req, to, object: sentObject, other }))
+  }
+  if (forwardToClient  ||  model.subClassOf === MY_PRODUCT) {
+    const { application } = req
+    const { applicant } = application
+    let customerHashes =  yield this.getOtherClientIdentities({ id: applicant._permalink })
+    let idx = customerHashes.indexOf(applicant._permalink)
+    if (idx !== -1)
+      customerHashes.splice(idx, 1)
+    if (customerHashes.length)
+      customerHashes.forEach(to => req.sendQueue.push({ req, to, object: sentObject, other }))
+  }
 })
 
 proto._addEmployeeRole = function _addEmployeeRole (user) {
@@ -1109,21 +1166,14 @@ proto.haveAllSubmittedFormsBeenManuallyApproved = co(function*({ application }) 
       .find(({ _verifiedBy }) => employeeIds.includes(_verifiedBy))
   )
 })
-proto._getPairedUsers = co(function*(masterUser) {
-  const masterHash = masterUser.identity._permalink
-  if (!masterHash) return
-  const masterIdentity = yield this.bot.addressBook.byPermalink(masterHash)
-  let pairedIdentities = []
-  masterIdentity.pubkeys.forEach(pub => {
-    if (pub.importedFrom) pairedIdentities.push(pub.importedFrom)
-  })
-  if (pairedIdentities.length) {
-    let result = yield allSettled(pairedIdentities.map(hash => this.bot.users.get(hash)))
-    return result.filter(item => item.isFulfilled).map(item => item.value)
-  }
+proto._getEmployeeDevicesHashes = co(function*(stub) {
+  let masterEmployeeIdentity = yield this.bot.addressBook.byPermalink(stub._permalink)
+  let pairedPubs = masterEmployeeIdentity.pubkeys.filter(pub => pub.importedFrom)
+  return pairedPubs.length ? pairedPubs.map(pub => pub.importedFrom) : []
 })
+
 proto._getPairedIdentitiesHashes = co(function*(req) {
-  const { user, masterUser, allUsers } = req
+  const { user, allUsers } = req
   let hashes = []
   if (allUsers)
     allUsers.forEach(u => {

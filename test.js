@@ -139,6 +139,8 @@ test('basic', co(function* (t) {
   t.equal(sendSpy.getCall(0).args[0].object[TYPE], 'tradle.Verification')
   t.equal(sendSpy.getCall(1).args[0].object[TYPE], 'tradle.Introduction')
   t.equal(sendSpy.getCall(2).args[0].object[TYPE], 'tradle.Introduction')
+  // t.equal(sendSpy.getCall(3).args[0].object[TYPE], 'tradle.Introduction')
+  // t.equal(sendSpy.getCall(4).args[0].object[TYPE], 'tradle.Introduction')
   t.equal(api.saveNewVersionOfApplication.callCount, 1)
   // t.same(application.analyst, relationshipManager.identity)
 
@@ -289,14 +291,50 @@ function fakeBot ({ users }) {
       signed: true
     })
   }, {})
+  const employee = {
+    _t: 'tradle.MyEmployeeOnboarding',
+    _link: '1234',
+    _permalink: 'bill123',
+    [SIG]: newSig(),
+  }
+  // const tedPubkey = {
+  //   _t: 'tradle.PubKey',
+  //   _link: '123pub',
+  //   _permalink: 'tedPub',
+  //   owner: {
+  //     _t: 'tradle.Identity',
+  //     _permalink: 'ted',
+  //     _link: '123'
+  //   }
+  // }
   const relationshipManagerIdentity = users.find(user => user.id === 'bill').identity
   const bot = {
     db: {
       find: () => Promise.resolve({ items: [] }),
-      findOne: () => Promise.resolve({}),
+      findOne: params => {
+        // debugger
+        const { filter } = params
+        if (filter  &&  filter.EQ) {
+          const { _t, importedFrom } = filter.EQ
+          if (_t === 'tradle.MyEmployeeOnboarding') {
+            let e = _.clone(employee)
+            _.extend(e, { owner: relationshipManagerIdentity })
+            return Promise.resolve(e)
+          }
+          else if (_t === 'tradle.PubKey'  &&  importedFrom) {
+            let pubkey = identities[importedFrom].pubkeys[0]
+            let pk = _.clone(pubkey)
+            _.extend(pk, { permalink: importedFrom })
+            return Promise.resolve(pk)
+          }
+        }
+        return Promise.resolve(employee)
+      },
       put: obj => Promise.resolve(),
       del: obj => Promise.resolve()
     },
+    models: baseModels,
+
     getResource: object => {
       let type = object[TYPE]
       let model = baseModels[type]
@@ -339,8 +377,15 @@ function fakeBot ({ users }) {
     },
     users: {
       get: co(function* (permalink) {
-        const user = users.find(user => user.id === permalink)
+        let user = users.find(user => user.id === permalink)
         if (!user) {
+          // for (let p in identities) {
+          //   if (identities[p]._permalink === permalink) {
+          //     user = users.find(user => user.id === p)
+          //     if (user)
+          //       return user
+          //   }
+          // }
           throw new Error('user not found')
         }
 
@@ -405,8 +450,9 @@ function newMock ({ users, application, employee }) {
     sinon.stub(productsAPI.state, 'getApplicationsByType').returns(application)
     sinon.stub(productsAPI, 'saveNewVersionOfApplication').resolves({})
   }
-  if (employee)
-    sinon.stub(bot.db, 'findOne').resolves(employee)
+  // if (employee)
+  //   sinon.stub(bot.db, 'findOne').resolves(employee)
+
   // const api = extend(new EventEmitter(), {
   //   bot,
   //   saveNewVersionOfApplication: sinon.stub().resolves({}),
