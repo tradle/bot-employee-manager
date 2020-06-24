@@ -187,7 +187,7 @@ proto._deduceApplication = co(function*(req, forceAction) {
     let application
     if (!items.length)
       return
-    application = yield this.bot.getResource(items[0], { backlinks: ['submissions'] })
+    application = yield this.bot.getResource(items[0], { backlinks: ['submissions', 'checks'] })
     this.productsAPI.state.organizeSubmissions(application)
     return application
   } catch (err) {
