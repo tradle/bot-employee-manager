@@ -653,7 +653,11 @@ proto._checkForEmployee = co(function* (req) {
     if (!application) return { done: true }
     req.application = application
   }
-  if (!application.analyst) return { stop: true }
+  if (!application.analyst) {
+    if (application.draft)
+      return { done: true }
+    return { stop: true }
+  }
 
   const analyst = yield this.bot.getResource(application.analyst)
   const analystID = analyst.owner._permalink
