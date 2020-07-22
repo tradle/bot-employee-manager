@@ -315,11 +315,11 @@ proto._maybeForwardToOrFromEmployee = co(function*({ req, forward }) {
 
     // forward to all client devices
     let pairedIdentities = yield this.getOtherClientIdentities({ id: forward })
-    if (pairedIdentities.length)
+    if (pairedIdentities.length) {
       req.clientIdentities = pairedIdentities
       // yield Promise.all(pairedIdentities.map(hash => req.sendQueue.push({ req, to:hash, object, other })))
       yield Promise.all(pairedIdentities.map(hash => this.forward({ req, to: hash })))
-
+    }
     return
   }
 
