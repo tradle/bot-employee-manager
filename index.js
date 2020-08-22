@@ -9,6 +9,8 @@ const buildResource = require('@tradle/build-resource')
 const { buildResourceStub, title } = require('@tradle/build-resource')
 
 const { parseStub } = require('@tradle/validate-resource').utils
+const { isSubClassOf } = require('@tradle/validate-model').utils
+
 const models = require('./models')
 const {
   debug,
@@ -45,6 +47,7 @@ const {
   SIMPLE_MESSAGE,
   REQUEST_ERROR,
   CHECK_OVERRIDE,
+  CHECK,
   CUSTOMER_WAITING,
   SELF_INTRODUCTION,
   DEVICE_SYNC,
@@ -67,6 +70,8 @@ const ORDER_BY_TIME_DESC = {
   property: '_time',
   desc: true
 }
+
+const DEVICE_SYNC_EXCLUDE = [...ACTION_TYPES, CHECK, CHECK_OVERRIDE, INTRODUCTION]
 
 exports = module.exports = function createEmployeeManager (opts) {
   return new EmployeeManager(opts)
@@ -672,12 +677,33 @@ proto._getSyncBundle = co(function* ({ masterUser, user, allUsers }) {
     allUsers.forEach(u => applications.push(...u.applications))
     applications.sort((a, b) => a.started - b.started)
   }
-  let appSubmissions = yield Promise.all(applications.map(app => this.bot.getResource({ permalink: app.statePermalink, type: APPLICATION }, { backlinks: ['submissions'] })))
+  let apps = yield Promise.all(applications.map(app => this.bot.getResource({ permalink: app.statePermalink, type: APPLICATION }, { backlinks: ['submissions'] })))
+  const models = this.bot.models
+
+  let allSubmissions = apps.map(app => app.submissions)
+  let appSubmissions = []
+  allSubmissions.forEach(submissions => {
+    submissions.sort((a, b) => b._time - a._time)
+    let fs = submissions.filter((s, i) => {
+      if (!i  ||  s.submission[TYPE] !== APPLICATION_SUBMITTED)
+        return true
+      return submissions[i-1].submission[TYPE] !== APPLICATION_SUBMITTED
+    })
+    appSubmissions.push(fs)
+  })
+
   let submissions = appSubmissions.reduce((a, b) => {
-    return a.concat(b.submissions)
-  }, []).filter(s => s.submission[TYPE] !== VERIFICATION)
+    return a.concat(b)
+  }, []).filter(s => {
+    const sType = s.submission[TYPE]
+    const model = models[sType]
+    return !DEVICE_SYNC_EXCLUDE.includes(sType) &&
+          !isSubClassOf({ subModel: CHECK, models, model }) &&
+          !isSubClassOf({ subModel: CHECK_OVERRIDE, models, model })
+  })
 
   submissions.sort((a, b) => a._time - b._time)
+
   let forms = yield Promise.all(submissions.map(s => this.bot.getResource(s.submission)))
 
   forms.forEach((form, i) => {
@@ -1043,6 +1069,7 @@ proto._didSend = co(function*(input, sentObject) {
     this._didSendToEmployee({ sentObject, req, other })
     return
   }
+
   if (soType === FORM_REQUEST    ||
       soType === FORM_ERROR      ||
       soType === APPROVAL        ||
@@ -1103,7 +1130,7 @@ proto._didSendToEmployee = co(function*({ sentObject, req, other }) {
   const soType = sentObject[TYPE]
   let model = this.bot.models[soType]
   let forwardToClient
-  if (model.id === VERIFICATION) {
+  if (soType === VERIFICATION) {
     if (sentObject.document[TYPE] !== ASSIGN_RM)
       forwardToClient = true
 

@@ -19,6 +19,7 @@ module.exports = {
   MESSAGE: 'tradle.Message',
   REQUEST_ERROR: 'tradle.RequestError',
   CHECK_OVERRIDE: 'tradle.CheckOverride',
+  CHECK: 'tradle.Check',
   DEVICE_SYNC: 'tradle.DeviceSync',
   DEVICE_SYNC_DATA_BUNDLE: 'tradle.DeviceSyncDataBundle',
   SELF_INTRODUCTION: 'tradle.SelfIntroduction',
