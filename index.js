@@ -654,7 +654,7 @@ proto._checkForEmployee = co(function* (req) {
   // Employee communicates with the client only inside some client application
   if (!application) {
     application = yield this._deduceApplication(req, true)
-    if (!application) return { done: true }
+    if (!application) return {} // { done: true }
     req.application = application
   }
   if (!application.analyst) {
