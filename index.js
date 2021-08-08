@@ -738,7 +738,8 @@ proto._onShareRequest = function ({ req }) {
         link,
         other
       }))
-
+      // send ShareRequest along
+      batch.push({ req, to: permalink, link: object._link, other })
       return this.productsAPI.sendBatch(batch)
     })
   )
