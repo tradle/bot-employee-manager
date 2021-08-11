@@ -54,7 +54,7 @@ const {
   DEVICE_SYNC_DATA_BUNDLE,
   CE_NOTIFICATION
 } = require('./types')
-const { MY_PRODUCT } = require('@tradle/bot-products/types')
+const { MY_PRODUCT, CUSTOMER } = require('@tradle/bot-products/types')
 
 const ACTION_TYPES = [ASSIGN_RM, VERIFICATION, APPROVAL, DENIAL]
 const INTRO_TYPES = [CUSTOMER_WAITING, SELF_INTRODUCTION, INTRODUCTION, IDENTITY_PUBLISH_REQUEST]
@@ -779,8 +779,14 @@ proto.forwardToEmployee = function forwardToEmployee ({ req, object, from, to, o
     other.originalSender = from.id || from
   }
   // return this.productsAPI.send({ req, to, object, other })
-
-  return this.bot.getResource({ [TYPE]: IDENTITY, _permalink: to, link: to })
+  let toHash = to
+  if (typeof to === 'object') {
+    if (to[TYPE] === CUSTOMER)
+      toHash = to.id
+    else
+      this.logger.debug(`forwarding to: ${to[TYPE]}`)
+  }
+  return this.bot.getResource({ [TYPE]: IDENTITY, _permalink: toHash, _link: toHash })
     .then(result => {
       let { pubkeys } = result
       let employeeHashes = [to]
