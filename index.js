@@ -622,7 +622,7 @@ proto._checkForEmployee = co(function* (req) {
   let { user, masterUser, application, applicant, message } = req
   const { object } = message
   const type = object[TYPE]
-
+  const { models } = this.bot
   if (application) {
     if (type === APPROVAL || type === DENIAL) {
       yield this.approveOrDeny({
@@ -636,7 +636,7 @@ proto._checkForEmployee = co(function* (req) {
       return { done: true }
     }
 
-    if (type === VERIFICATION) {
+    if (type === VERIFICATION  ||  isSubClassOf({ subModel: models[CHECK_OVERRIDE], model: models[type], models })) {
       // defer to bot-products to import
       return { done: true }
     }
