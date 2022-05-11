@@ -132,6 +132,7 @@ proto.handleMessages = function handleMessages (handle = true) {
     productsAPI.plugins.use({
       onFormsCollected: this._onFormsCollected,
       willSend: this._willSend,
+      onRequestForExistingProduct: this._onRequestForExistingProduct,
       didSend: this._didSend
       // willSign: setEntityRole
     }),
@@ -1162,6 +1163,11 @@ proto._didSendToEmployee = co(function*({ sentObject, req, other }) {
     if (customerHashes.length)
       customerHashes.forEach(to => req.sendQueue.push({ req, to, object: sentObject, other }))
   }
+})
+
+proto._onRequestForExistingProduct = co(function*(req) {
+  if (this.isEmployee(req))
+    yield this.productsAPI.addApplication({ req })
 })
 
 proto._addEmployeeRole = function _addEmployeeRole (user) {
