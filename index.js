@@ -662,7 +662,7 @@ proto._checkForEmployee = co(function* (req) {
     if (application.draft)
       return { done: true }
     // Case when employee fills out the application for the client and never sends it to him
-    else if (application.applicant._permalink === user.identity._permalink)
+    else if (application.applicant._permalink === user.identity._permalink || application.filledForCustomer)
       return  {}
     return { stop: true }
   }
