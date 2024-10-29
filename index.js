@@ -130,6 +130,7 @@ proto.handleMessages = function handleMessages (handle = true) {
 
   this._pluginSubscriptions = [
     productsAPI.plugins.use({
+      name: 'employee-manager',
       onFormsCollected: this._onFormsCollected,
       willSend: this._willSend,
       onRequestForExistingProduct: this._onRequestForExistingProduct,
@@ -140,6 +141,7 @@ proto.handleMessages = function handleMessages (handle = true) {
     // prepend
     productsAPI.plugins.use(
       {
+        name: 'employee-manager-unshift',
         onmessage: this._onmessage,
         deduceApplication: this._deduceApplication
       },
@@ -147,6 +149,7 @@ proto.handleMessages = function handleMessages (handle = true) {
     ),
 
     productsAPI.plugins.use({
+      name: 'employee-manager-didApproveApplication',
       didApproveApplication: ({ req, user, application }, certificate) => {
         if (certificate[TYPE] == EMPLOYEE_PASS) {
           this._addEmployeeRole(user)
